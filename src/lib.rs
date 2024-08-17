@@ -3,6 +3,7 @@ mod audio;
 use pyo3::prelude::*;
 
 trait PyRes<R> {
+    #[allow(unused)]
     fn w(self) -> PyResult<R>;
     fn w_f(self, annot: &std::path::Path) -> PyResult<R>;
 }
@@ -105,7 +106,7 @@ impl FileReader {
 /// The input argument is a list of filenames. For each of these files, the duration in seconds is
 /// returned as a float, None is returned if the files cannot be open or properly read.
 #[pyfunction]
-fn durations(filenames: Vec<String>) -> Vec<Option<f64>> {
+fn durations(filenames: Vec<std::path::PathBuf>) -> Vec<Option<f64>> {
     use rayon::prelude::*;
     filenames
         .par_iter()
@@ -118,9 +119,58 @@ fn durations(filenames: Vec<String>) -> Vec<Option<f64>> {
         .collect()
 }
 
+/// Reads the content of an audio file and returns it as a numpy array.
+///
+/// The input argument is a filename. Its content is decoded the audio data for the whole file and
+/// return it as a two dimensional numpy array as well as the sample rate.
+#[pyfunction]
+#[pyo3(signature = (filename, start_sec=None, duration_sec=None, sample_rate=None))]
+fn read(
+    filename: std::path::PathBuf,
+    start_sec: Option<f64>,
+    duration_sec: Option<f64>,
+    sample_rate: Option<u32>,
+) -> PyResult<(PyObject, u32)> {
+    let mut reader = audio::FileReader::new(&filename).w_f(filename.as_path())?;
+    let data = match (start_sec, duration_sec) {
+        (Some(start_sec), Some(duration_sec)) => {
+            reader.decode(start_sec, duration_sec, false).w_f(filename.as_path())?.0
+        }
+        (Some(start_sec), None) => reader.decode(start_sec, 1e9, false).w_f(filename.as_path())?.0,
+        (None, Some(duration_sec)) => {
+            reader.decode(0., duration_sec, false).w_f(filename.as_path())?.0
+        }
+        (None, None) => reader.decode_all().w_f(filename.as_path())?,
+    };
+    let (data, sample_rate) = match sample_rate {
+        Some(out_sr) => {
+            let in_sr = reader.sample_rate() as usize;
+            let data = data
+                .iter()
+                .map(|data| {
+                    let data = audio::resample(data, in_sr, out_sr as usize)?;
+                    Ok::<_, anyhow::Error>(data)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .w_f(filename.as_path())?;
+            (data, out_sr)
+        }
+        None => {
+            let sample_rate = reader.sample_rate();
+            (data, sample_rate)
+        }
+    };
+    let data = Python::with_gil(|py| {
+        Ok::<_, PyErr>(numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py))
+    })
+    .w_f(filename.as_path())?;
+    Ok((data, sample_rate))
+}
+
 #[pymodule]
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FileReader>()?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
+    m.add_function(wrap_pyfunction!(read, m)?)?;
     Ok(())
 }
