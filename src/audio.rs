@@ -302,3 +302,17 @@ pub fn resample(pcm_in: &[f32], sr_in: usize, sr_out: usize) -> anyhow::Result<V
 
     Ok(pcm_out)
 }
+
+pub fn resample2(
+    pcm_in: &[Vec<f32>],
+    sr_in: usize,
+    sr_out: usize,
+) -> anyhow::Result<Vec<Vec<f32>>> {
+    pcm_in
+        .iter()
+        .map(|data| {
+            let data = resample(data, sr_in, sr_out)?;
+            Ok::<_, anyhow::Error>(data)
+        })
+        .collect::<Result<Vec<_>, _>>()
+}

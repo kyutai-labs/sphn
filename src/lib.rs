@@ -145,14 +145,7 @@ fn read(
     let (data, sample_rate) = match sample_rate {
         Some(out_sr) => {
             let in_sr = reader.sample_rate() as usize;
-            let data = data
-                .iter()
-                .map(|data| {
-                    let data = audio::resample(data, in_sr, out_sr as usize)?;
-                    Ok::<_, anyhow::Error>(data)
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .w_f(filename.as_path())?;
+            let data = audio::resample2(&data, in_sr, out_sr as usize).w_f(filename.as_path())?;
             (data, out_sr)
         }
         None => {
