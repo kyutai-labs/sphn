@@ -22,6 +22,16 @@ def read(filename, start_sec=None, duration_sec=None, sample_rate=None):
     """
     pass
 
+@staticmethod
+def write_wav(filename, data, sample_rate):
+    """
+    Writes an audio file using the wav format based on pcm data from a numpy array.
+
+    This only supports a single channel at the moment so the input array data is expected to have a
+    single dimension.
+    """
+    pass
+
 class FileReader:
     def __init__(path):
         pass
