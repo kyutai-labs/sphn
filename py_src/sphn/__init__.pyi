@@ -12,10 +12,21 @@ def durations(filenames):
     """
     pass
 
+@staticmethod
+def read(filename, start_sec=None, duration_sec=None, sample_rate=None):
+    """
+    Reads the content of an audio file and returns it as a numpy array.
+
+    The input argument is a filename. Its content is decoded the audio data for the whole file and
+    return it as a two dimensional numpy array as well as the sample rate.
+    """
+    pass
+
 class FileReader:
     def __init__(path):
         pass
 
+    @property
     def channels(self):
         """
         The number of channels.
@@ -48,12 +59,14 @@ class FileReader:
         """
         pass
 
+    @property
     def duration_sec(self):
         """
         The duration of the audio stream in seconds.
         """
         pass
 
+    @property
     def sample_rate(self):
         """
         The sample rate as an int.

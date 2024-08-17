@@ -9,3 +9,6 @@ print(fr.sample_rate, fr.duration_sec, fr.channels)
 
 data = fr.decode_all()
 print(data.shape)
+
+data, sr = sphn.read(filename)
+print(data.shape, sr)
