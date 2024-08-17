@@ -1,4 +1,5 @@
 mod audio;
+mod wav;
 
 use pyo3::prelude::*;
 
@@ -160,10 +161,35 @@ fn read(
     Ok((data, sample_rate))
 }
 
+/// Writes an audio file using the wav format based on pcm data from a numpy array.
+///
+/// This only supports a single channel at the moment so the input array data is expected to have a
+/// single dimension.
+#[pyfunction]
+#[pyo3(signature = (filename, data, sample_rate))]
+fn write_wav(
+    filename: std::path::PathBuf,
+    data: numpy::PyReadonlyArray1<f32>,
+    sample_rate: u32,
+) -> PyResult<()> {
+    let w = std::fs::File::create(&filename).w_f(filename.as_path())?;
+    let mut w = std::io::BufWriter::new(w);
+    let data = data.as_array();
+    match data.as_slice() {
+        None => {
+            let data = data.to_vec();
+            wav::write(&mut w, data.as_ref(), sample_rate).w_f(filename.as_path())?
+        }
+        Some(data) => wav::write(&mut w, data, sample_rate).w_f(filename.as_path())?,
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FileReader>()?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
+    m.add_function(wrap_pyfunction!(write_wav, m)?)?;
     Ok(())
 }
