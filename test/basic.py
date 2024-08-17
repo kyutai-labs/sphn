@@ -12,3 +12,5 @@ print(data.shape)
 
 data, sr = sphn.read(filename)
 print(data.shape, sr)
+
+sphn.write_wav("bria.wav", data[0], sr)
