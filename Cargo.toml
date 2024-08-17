@@ -1,0 +1,25 @@
+[package]
+name = "sphn"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sphn"
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0.79"
+numpy = "0.21.0"
+pyo3 = "0.21.0"
+rayon = "1.8.1"
+rubato = "0.15.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.113"
+symphonia = { version = "0.5.4", features = ["all"] }
+
+[profile.release]
+debug = true
+
+[profile.release-no-debug]
+inherits = "release"
+debug = false
