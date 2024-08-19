@@ -186,6 +186,9 @@ fn write_wav(
     Ok(())
 }
 
+/// Reads the whole content of an ogg/opus encoded file.
+///
+/// This returns a two dimensional array as well as the sample rate.
 #[pyfunction]
 #[pyo3(signature = (filename))]
 fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u32)> {

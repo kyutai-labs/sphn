@@ -23,6 +23,15 @@ def read(filename, start_sec=None, duration_sec=None, sample_rate=None):
     pass
 
 @staticmethod
+def read_opus(filename):
+    """
+    Reads the whole content of an ogg/opus encoded file.
+
+    This returns a two dimensional array as well as the sample rate.
+    """
+    pass
+
+@staticmethod
 def write_wav(filename, data, sample_rate):
     """
     Writes an audio file using the wav format based on pcm data from a numpy array.
