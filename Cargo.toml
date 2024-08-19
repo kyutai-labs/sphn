@@ -10,6 +10,8 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.79"
 numpy = "0.21.0"
+ogg = "0.9.1"
+opus = "0.3.0"
 pyo3 = "0.21.0"
 rayon = "1.8.1"
 rubato = "0.15.0"
