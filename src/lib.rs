@@ -1,4 +1,5 @@
 mod audio;
+mod opus;
 mod wav;
 
 use pyo3::prelude::*;
@@ -185,11 +186,23 @@ fn write_wav(
     Ok(())
 }
 
+/// Reads the whole content of an ogg/opus encoded file.
+///
+/// This returns a two dimensional array as well as the sample rate.
+#[pyfunction]
+#[pyo3(signature = (filename))]
+fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u32)> {
+    let (data, sample_rate) = opus::read_ogg(&filename).w_f(filename.as_path())?;
+    let data = numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py);
+    Ok((data, sample_rate))
+}
+
 #[pymodule]
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FileReader>()?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
     m.add_function(wrap_pyfunction!(write_wav, m)?)?;
+    m.add_function(wrap_pyfunction!(read_opus, m)?)?;
     Ok(())
 }
