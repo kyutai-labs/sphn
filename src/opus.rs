@@ -1,5 +1,10 @@
 use anyhow::Result;
 
+// This must be an allowed value among 120, 240, 480, 960, 1920, and 2880.
+// Using a different value would result in a BadArg "invalid argument" error when calling encode.
+// https://opus-codec.org/docs/opus_api-1.2/group__opus__encoder.html#ga4ae9905859cd241ef4bb5c59cd5e5309
+const OPUS_ENCODER_FRAME_SIZE: usize = 960;
+
 #[allow(unused)]
 #[derive(Debug)]
 struct OpusHeader {
@@ -83,4 +88,67 @@ pub fn read_ogg<R: std::io::Read + std::io::Seek>(reader: R) -> Result<(Vec<Vec<
         c => anyhow::bail!("unexpected number of channels {c}"),
     };
     Ok((data, sample_rate))
+}
+
+fn write_opus_header<W: std::io::Write>(
+    w: &mut W,
+    channels: u8,
+    sample_rate: u32,
+) -> std::io::Result<()> {
+    use byteorder::WriteBytesExt;
+
+    // https://wiki.xiph.org/OggOpus#ID_Header
+    w.write_all(b"OpusHead")?;
+    w.write_u8(1)?; // version
+    w.write_u8(channels)?; // channel count
+    w.write_u16::<byteorder::LittleEndian>(3840)?; // pre-skip
+    w.write_u32::<byteorder::LittleEndian>(sample_rate)?; //  sample-rate in Hz
+    w.write_i16::<byteorder::LittleEndian>(0)?; // output gain Q7.8 in dB
+    w.write_u8(0)?; // channel map
+    Ok(())
+}
+
+fn write_opus_tags<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
+    use byteorder::WriteBytesExt;
+
+    // https://wiki.xiph.org/OggOpus#Comment_Header
+    let vendor = "sphn-pyo3";
+    w.write_all(b"OpusTags")?;
+    w.write_u32::<byteorder::LittleEndian>(vendor.len() as u32)?; // vendor string length
+    w.write_all(vendor.as_bytes())?; // vendor string, UTF8 encoded
+    w.write_u32::<byteorder::LittleEndian>(0u32)?; // number of tags
+    Ok(())
+}
+
+pub fn write_ogg<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Result<()> {
+    let mut pw = ogg::PacketWriter::new(w);
+
+    // Write the opus headers and tags
+    let mut head = Vec::new();
+    write_opus_header(&mut head, 1, sample_rate)?;
+    pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+    let mut tags = Vec::new();
+    write_opus_tags(&mut tags)?;
+    pw.write_packet(tags, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+
+    // Write the actual pcm data
+    let mut encoder =
+        opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
+    let mut out_pcm_buf = vec![0u8; 50_000];
+
+    let mut total_data = 0;
+    let n_frames = pcm.len() / OPUS_ENCODER_FRAME_SIZE;
+    for (frame_idx, pcm) in pcm.chunks_exact(OPUS_ENCODER_FRAME_SIZE).enumerate() {
+        total_data += pcm.len() as u64;
+        let size = encoder.encode_float(pcm, &mut out_pcm_buf)?;
+        let msg = out_pcm_buf[..size].to_vec();
+        let inf = if frame_idx + 1 == n_frames {
+            ogg::PacketWriteEndInfo::EndPage
+        } else {
+            ogg::PacketWriteEndInfo::NormalPacket
+        };
+        pw.write_packet(msg, 42, inf, total_data)?;
+    }
+
+    Ok(())
 }
