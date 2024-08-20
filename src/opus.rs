@@ -26,10 +26,9 @@ fn parse_opus_header(packet: &[u8]) -> Result<OpusHeader> {
     Ok(header)
 }
 
-pub fn read_ogg<P: AsRef<std::path::Path>>(p: P) -> Result<(Vec<Vec<f32>>, u32)> {
-    let file = std::fs::File::open(p.as_ref())?;
-    let file = std::io::BufReader::new(file);
-    let mut packet_reader = ogg::PacketReader::new(file);
+/// Read an ogg stream using the opus codec.
+pub fn read_ogg<R: std::io::Read + std::io::Seek>(reader: R) -> Result<(Vec<Vec<f32>>, u32)> {
+    let mut packet_reader = ogg::PacketReader::new(reader);
     let mut opus_decoder = None;
     let mut channels = 1;
     let mut all_data = vec![];

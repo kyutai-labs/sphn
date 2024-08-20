@@ -192,7 +192,21 @@ fn write_wav(
 #[pyfunction]
 #[pyo3(signature = (filename))]
 fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u32)> {
-    let (data, sample_rate) = opus::read_ogg(&filename).w_f(filename.as_path())?;
+    let file = std::fs::File::open(&filename)?;
+    let file = std::io::BufReader::new(file);
+    let (data, sample_rate) = opus::read_ogg(file).w_f(filename.as_path())?;
+    let data = numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py);
+    Ok((data, sample_rate))
+}
+
+/// Reads bytes corresponding to an ogg/opus encoded file.
+///
+/// This returns a two dimensional array as well as the sample rate.
+#[pyfunction]
+#[pyo3(signature = (bytes))]
+fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(PyObject, u32)> {
+    let bytes = std::io::Cursor::new(bytes);
+    let (data, sample_rate) = opus::read_ogg(bytes).w()?;
     let data = numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py);
     Ok((data, sample_rate))
 }
@@ -204,5 +218,6 @@ fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read, m)?)?;
     m.add_function(wrap_pyfunction!(write_wav, m)?)?;
     m.add_function(wrap_pyfunction!(read_opus, m)?)?;
+    m.add_function(wrap_pyfunction!(read_opus_bytes, m)?)?;
     Ok(())
 }
