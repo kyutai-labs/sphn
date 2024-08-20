@@ -16,3 +16,5 @@ Cargo.lock
 __pycache__
 
 bria.mp3
+bria.wav
+bria.opus

@@ -191,11 +191,12 @@ fn write_wav(
 }
 
 #[pyfunction]
-#[pyo3(signature = (filename, data, sample_rate))]
+#[pyo3(signature = (filename, data, sample_rate, resample_to=None))]
 fn write_opus(
     filename: std::path::PathBuf,
     data: numpy::PyReadonlyArray1<f32>,
     sample_rate: u32,
+    resample_to: Option<u32>,
 ) -> PyResult<()> {
     let w = std::fs::File::create(&filename).w_f(filename.as_path())?;
     let mut w = std::io::BufWriter::new(w);
@@ -203,9 +204,12 @@ fn write_opus(
     match data.as_slice() {
         None => {
             let data = data.to_vec();
-            opus::write_ogg(&mut w, data.as_ref(), sample_rate).w_f(filename.as_path())?
+            opus::write_ogg(&mut w, data.as_ref(), sample_rate, resample_to)
+                .w_f(filename.as_path())?
         }
-        Some(data) => opus::write_ogg(&mut w, data, sample_rate).w_f(filename.as_path())?,
+        Some(data) => {
+            opus::write_ogg(&mut w, data, sample_rate, resample_to).w_f(filename.as_path())?
+        }
     }
     Ok(())
 }

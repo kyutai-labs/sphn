@@ -120,7 +120,7 @@ fn write_opus_tags<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn write_ogg<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Result<()> {
+fn write_ogg_<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Result<()> {
     let mut pw = ogg::PacketWriter::new(w);
 
     // Write the opus headers and tags
@@ -151,4 +151,19 @@ pub fn write_ogg<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) ->
     }
 
     Ok(())
+}
+
+pub fn write_ogg<W: std::io::Write>(
+    w: &mut W,
+    pcm: &[f32],
+    sample_rate: u32,
+    resample_to: Option<u32>,
+) -> Result<()> {
+    match resample_to {
+        None => write_ogg_(w, pcm, sample_rate),
+        Some(resample_to) => {
+            let pcm = crate::audio::resample(pcm, sample_rate as usize, resample_to as usize)?;
+            write_ogg_(w, &pcm, resample_to)
+        }
+    }
 }
