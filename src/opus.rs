@@ -121,6 +121,12 @@ fn write_opus_tags<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
 }
 
 fn write_ogg_<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Result<()> {
+    match sample_rate {
+        8000 | 12000 | 16000 | 24000 | 48000 => {}
+        sample_rate => {
+            anyhow::bail!("unsupported sample rate for opus {sample_rate}, try resample_to=48000")
+        }
+    }
     let mut pw = ogg::PacketWriter::new(w);
 
     // Write the opus headers and tags
