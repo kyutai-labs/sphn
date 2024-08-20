@@ -50,6 +50,10 @@ impl FileReader {
         Ok(Self { inner, path: path.to_path_buf() })
     }
 
+    fn __str__(&self) -> String {
+        format!("FileReader(path={:?})", self.path)
+    }
+
     /// The duration of the audio stream in seconds.
     #[getter]
     fn duration_sec(&self) -> f64 {
