@@ -120,7 +120,12 @@ fn write_opus_tags<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
     Ok(())
 }
 
-fn write_ogg_<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Result<()> {
+fn write_ogg_<W: std::io::Write>(
+    w: &mut W,
+    pcm: &[f32],
+    sample_rate: u32,
+    stereo: bool,
+) -> Result<()> {
     match sample_rate {
         8000 | 12000 | 16000 | 24000 | 48000 => {}
         sample_rate => {
@@ -128,10 +133,11 @@ fn write_ogg_<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Re
         }
     }
     let mut pw = ogg::PacketWriter::new(w);
+    let channels = if stereo { 2 } else { 1 };
 
     // Write the opus headers and tags
     let mut head = Vec::new();
-    write_opus_header(&mut head, 1, sample_rate)?;
+    write_opus_header(&mut head, channels as u8, sample_rate)?;
     pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
     let mut tags = Vec::new();
     write_opus_tags(&mut tags)?;
@@ -140,14 +146,14 @@ fn write_ogg_<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Re
     // Write the actual pcm data
     let mut encoder =
         opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
-    let mut out_pcm_buf = vec![0u8; 50_000];
+    let mut out_encoded = vec![0u8; 50_000];
 
     let mut total_data = 0;
-    let n_frames = pcm.len() / OPUS_ENCODER_FRAME_SIZE;
-    for (frame_idx, pcm) in pcm.chunks_exact(OPUS_ENCODER_FRAME_SIZE).enumerate() {
+    let n_frames = pcm.len() / (channels * OPUS_ENCODER_FRAME_SIZE);
+    for (frame_idx, pcm) in pcm.chunks_exact(OPUS_ENCODER_FRAME_SIZE * channels).enumerate() {
         total_data += pcm.len() as u64;
-        let size = encoder.encode_float(pcm, &mut out_pcm_buf)?;
-        let msg = out_pcm_buf[..size].to_vec();
+        let size = encoder.encode_float(pcm, &mut out_encoded)?;
+        let msg = out_encoded[..size].to_vec();
         let inf = if frame_idx + 1 == n_frames {
             ogg::PacketWriteEndInfo::EndPage
         } else {
@@ -159,17 +165,17 @@ fn write_ogg_<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Re
     Ok(())
 }
 
-pub fn write_ogg<W: std::io::Write>(
+pub fn write_ogg_mono<W: std::io::Write>(
     w: &mut W,
     pcm: &[f32],
     sample_rate: u32,
     resample_to: Option<u32>,
 ) -> Result<()> {
     match resample_to {
-        None => write_ogg_(w, pcm, sample_rate),
+        None => write_ogg_(w, pcm, sample_rate, false),
         Some(resample_to) => {
             let pcm = crate::audio::resample(pcm, sample_rate as usize, resample_to as usize)?;
-            write_ogg_(w, &pcm, resample_to)
+            write_ogg_(w, &pcm, resample_to, false)
         }
     }
 }

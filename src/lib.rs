@@ -204,11 +204,11 @@ fn write_opus(
     match data.as_slice() {
         None => {
             let data = data.to_vec();
-            opus::write_ogg(&mut w, data.as_ref(), sample_rate, resample_to)
+            opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate, resample_to)
                 .w_f(filename.as_path())?
         }
         Some(data) => {
-            opus::write_ogg(&mut w, data, sample_rate, resample_to).w_f(filename.as_path())?
+            opus::write_ogg_mono(&mut w, data, sample_rate, resample_to).w_f(filename.as_path())?
         }
     }
     Ok(())
