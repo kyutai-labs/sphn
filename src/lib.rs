@@ -7,17 +7,17 @@ use pyo3::prelude::*;
 trait PyRes<R> {
     #[allow(unused)]
     fn w(self) -> PyResult<R>;
-    fn w_f(self, annot: &std::path::Path) -> PyResult<R>;
+    fn w_f<P: AsRef<std::path::Path>>(self, p: P) -> PyResult<R>;
 }
 
 impl<R, E: Into<anyhow::Error>> PyRes<R> for Result<R, E> {
     fn w(self) -> PyResult<R> {
         self.map_err(|e| pyo3::exceptions::PyValueError::new_err(e.into().to_string()))
     }
-    fn w_f(self, annot: &std::path::Path) -> PyResult<R> {
+    fn w_f<P: AsRef<std::path::Path>>(self, p: P) -> PyResult<R> {
         self.map_err(|e| {
             let e = e.into().to_string();
-            let msg = format!("{annot:?}: {e}");
+            let msg = format!("{:?}: {e}", p.as_ref());
             pyo3::exceptions::PyValueError::new_err(msg)
         })
     }
@@ -46,7 +46,7 @@ struct FileReader {
 impl FileReader {
     #[new]
     fn new(path: std::path::PathBuf) -> PyResult<Self> {
-        let inner = audio::FileReader::new(&path).w_f(path.as_path())?;
+        let inner = audio::FileReader::new(&path).w_f(&path)?;
         Ok(Self { inner, path: path.to_path_buf() })
     }
 
@@ -79,7 +79,7 @@ impl FileReader {
     /// returned.
     fn decode(&mut self, start_sec: f64, duration_sec: f64, py: Python) -> PyResult<PyObject> {
         let (data, _unpadded_len) =
-            self.inner.decode(start_sec, duration_sec, false).w_f(self.path.as_path())?;
+            self.inner.decode(start_sec, duration_sec, false).w_f(&self.path)?;
         Ok(numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py))
     }
 
@@ -95,14 +95,14 @@ impl FileReader {
         py: Python,
     ) -> PyResult<(PyObject, usize)> {
         let (data, unpadded_len) =
-            self.inner.decode(start_sec, duration_sec, true).w_f(self.path.as_path())?;
+            self.inner.decode(start_sec, duration_sec, true).w_f(&self.path)?;
         let data = numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py);
         Ok((data, unpadded_len))
     }
 
     /// Decodes the audio data for the whole file and return it as a two dimensional numpy array.
     fn decode_all(&mut self, py: Python) -> PyResult<PyObject> {
-        let data = self.inner.decode_all().w_f(self.path.as_path())?;
+        let data = self.inner.decode_all().w_f(&self.path)?;
         Ok(numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py))
     }
 }
@@ -137,21 +137,19 @@ fn read(
     duration_sec: Option<f64>,
     sample_rate: Option<u32>,
 ) -> PyResult<(PyObject, u32)> {
-    let mut reader = audio::FileReader::new(&filename).w_f(filename.as_path())?;
+    let mut reader = audio::FileReader::new(&filename).w_f(&filename)?;
     let data = match (start_sec, duration_sec) {
         (Some(start_sec), Some(duration_sec)) => {
-            reader.decode(start_sec, duration_sec, false).w_f(filename.as_path())?.0
+            reader.decode(start_sec, duration_sec, false).w_f(&filename)?.0
         }
-        (Some(start_sec), None) => reader.decode(start_sec, 1e9, false).w_f(filename.as_path())?.0,
-        (None, Some(duration_sec)) => {
-            reader.decode(0., duration_sec, false).w_f(filename.as_path())?.0
-        }
-        (None, None) => reader.decode_all().w_f(filename.as_path())?,
+        (Some(start_sec), None) => reader.decode(start_sec, 1e9, false).w_f(&filename)?.0,
+        (None, Some(duration_sec)) => reader.decode(0., duration_sec, false).w_f(&filename)?.0,
+        (None, None) => reader.decode_all().w_f(&filename)?,
     };
     let (data, sample_rate) = match sample_rate {
         Some(out_sr) => {
             let in_sr = reader.sample_rate() as usize;
-            let data = audio::resample2(&data, in_sr, out_sr as usize).w_f(filename.as_path())?;
+            let data = audio::resample2(&data, in_sr, out_sr as usize).w_f(&filename)?;
             (data, out_sr)
         }
         None => {
@@ -162,7 +160,7 @@ fn read(
     let data = Python::with_gil(|py| {
         Ok::<_, PyErr>(numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py))
     })
-    .w_f(filename.as_path())?;
+    .w_f(&filename)?;
     Ok((data, sample_rate))
 }
 
@@ -177,15 +175,15 @@ fn write_wav(
     data: numpy::PyReadonlyArray1<f32>,
     sample_rate: u32,
 ) -> PyResult<()> {
-    let w = std::fs::File::create(&filename).w_f(filename.as_path())?;
+    let w = std::fs::File::create(&filename).w_f(&filename)?;
     let mut w = std::io::BufWriter::new(w);
     let data = data.as_array();
     match data.as_slice() {
         None => {
             let data = data.to_vec();
-            wav::write(&mut w, data.as_ref(), sample_rate).w_f(filename.as_path())?
+            wav::write(&mut w, data.as_ref(), sample_rate).w_f(&filename)?
         }
-        Some(data) => wav::write(&mut w, data, sample_rate).w_f(filename.as_path())?,
+        Some(data) => wav::write(&mut w, data, sample_rate).w_f(&filename)?,
     }
     Ok(())
 }
@@ -198,17 +196,16 @@ fn write_opus(
     sample_rate: u32,
     resample_to: Option<u32>,
 ) -> PyResult<()> {
-    let w = std::fs::File::create(&filename).w_f(filename.as_path())?;
+    let w = std::fs::File::create(&filename).w_f(&filename)?;
     let mut w = std::io::BufWriter::new(w);
     let data = data.as_array();
     match data.as_slice() {
         None => {
             let data = data.to_vec();
-            opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate, resample_to)
-                .w_f(filename.as_path())?
+            opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate, resample_to).w_f(&filename)?
         }
         Some(data) => {
-            opus::write_ogg_mono(&mut w, data, sample_rate, resample_to).w_f(filename.as_path())?
+            opus::write_ogg_mono(&mut w, data, sample_rate, resample_to).w_f(&filename)?
         }
     }
     Ok(())
@@ -222,7 +219,7 @@ fn write_opus(
 fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u32)> {
     let file = std::fs::File::open(&filename)?;
     let file = std::io::BufReader::new(file);
-    let (data, sample_rate) = opus::read_ogg(file).w_f(filename.as_path())?;
+    let (data, sample_rate) = opus::read_ogg(file).w_f(&filename)?;
     let data = numpy::PyArray2::from_vec2_bound(py, &data)?.into_py(py);
     Ok((data, sample_rate))
 }
