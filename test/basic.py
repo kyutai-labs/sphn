@@ -4,7 +4,6 @@ filename = "bria.mp3"
 durations = sphn.durations([filename])
 print(durations)
 
-print(sphn.read_opus("/Users/laurent/Downloads/ehren-paper_lights-96.opus"))
 fr = sphn.FileReader(filename)
 print(fr.sample_rate, fr.duration_sec, fr.channels)
 
