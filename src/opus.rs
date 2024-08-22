@@ -129,24 +129,21 @@ fn write_opus_tags<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
     Ok(())
 }
 
-fn write_ogg_<W: std::io::Write>(
+// Opus audio is always encoded at 48kHz, this function assumes that it is the case. The
+// input_sample_rate is only indicative of the sample rate of the original source (which appears in
+// the opus header).
+fn write_ogg_48khz<W: std::io::Write>(
     w: &mut W,
     pcm: &[f32],
-    sample_rate: u32,
+    input_sample_rate: u32,
     stereo: bool,
 ) -> Result<()> {
-    match sample_rate {
-        8000 | 12000 | 16000 | 24000 | 48000 => {}
-        sample_rate => {
-            anyhow::bail!("unsupported sample rate for opus {sample_rate}, try resample_to=48000")
-        }
-    }
     let mut pw = ogg::PacketWriter::new(w);
     let channels = if stereo { 2 } else { 1 };
 
     // Write the opus headers and tags
     let mut head = Vec::new();
-    write_opus_header(&mut head, channels as u8, sample_rate)?;
+    write_opus_header(&mut head, channels as u8, input_sample_rate)?;
     pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
     let mut tags = Vec::new();
     write_opus_tags(&mut tags)?;
@@ -154,7 +151,7 @@ fn write_ogg_<W: std::io::Write>(
 
     // Write the actual pcm data
     let mut encoder =
-        opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
+        opus::Encoder::new(OPUS_SAMPLE_RATE, opus::Channels::Mono, opus::Application::Voip)?;
     let mut out_encoded = vec![0u8; 50_000];
 
     let mut total_data = 0;
@@ -174,17 +171,11 @@ fn write_ogg_<W: std::io::Write>(
     Ok(())
 }
 
-pub fn write_ogg_mono<W: std::io::Write>(
-    w: &mut W,
-    pcm: &[f32],
-    sample_rate: u32,
-    resample_to: Option<u32>,
-) -> Result<()> {
-    match resample_to {
-        None => write_ogg_(w, pcm, sample_rate, false),
-        Some(resample_to) => {
-            let pcm = crate::audio::resample(pcm, sample_rate as usize, resample_to as usize)?;
-            write_ogg_(w, &pcm, resample_to, false)
-        }
+pub fn write_ogg_mono<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u32) -> Result<()> {
+    if sample_rate == OPUS_SAMPLE_RATE {
+        write_ogg_48khz(w, pcm, sample_rate, false)
+    } else {
+        let pcm = crate::audio::resample(pcm, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
+        write_ogg_48khz(w, &pcm, sample_rate, false)
     }
 }

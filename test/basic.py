@@ -14,4 +14,4 @@ data, sr = sphn.read(filename)
 print(data.shape, sr)
 
 sphn.write_wav("bria.wav", data[0], sr)
-sphn.write_opus("bria.opus", data[0], sr, resample_to=48000)
+sphn.write_opus("bria.opus", data[0], sr)

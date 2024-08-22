@@ -188,13 +188,16 @@ fn write_wav(
     Ok(())
 }
 
+/// Writes an opus file containing the input pcm data.
+///
+/// Opus content is always encoded at 48kHz so the pcm data is resampled if sample_rate is
+/// different from 48000.
 #[pyfunction]
-#[pyo3(signature = (filename, data, sample_rate, resample_to=None))]
+#[pyo3(signature = (filename, data, sample_rate))]
 fn write_opus(
     filename: std::path::PathBuf,
     data: numpy::PyReadonlyArray1<f32>,
     sample_rate: u32,
-    resample_to: Option<u32>,
 ) -> PyResult<()> {
     let w = std::fs::File::create(&filename).w_f(&filename)?;
     let mut w = std::io::BufWriter::new(w);
@@ -202,11 +205,9 @@ fn write_opus(
     match data.as_slice() {
         None => {
             let data = data.to_vec();
-            opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate, resample_to).w_f(&filename)?
+            opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate).w_f(&filename)?
         }
-        Some(data) => {
-            opus::write_ogg_mono(&mut w, data, sample_rate, resample_to).w_f(&filename)?
-        }
+        Some(data) => opus::write_ogg_mono(&mut w, data, sample_rate).w_f(&filename)?,
     }
     Ok(())
 }

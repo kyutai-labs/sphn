@@ -27,7 +27,8 @@ def read_opus(filename):
     """
     Reads the whole content of an ogg/opus encoded file.
 
-    This returns a two dimensional array as well as the sample rate.
+    This returns a two dimensional array as well as the sample rate. Currently all opus audio is
+    encoded at 48kHz so this value is always returned.
     """
     pass
 
@@ -36,13 +37,19 @@ def read_opus_bytes(bytes):
     """
     Reads bytes corresponding to an ogg/opus encoded file.
 
-    This returns a two dimensional array as well as the sample rate.
+    This returns a two dimensional array as well as the sample rate. Currently all opus audio is
+    encoded at 48kHz so this value is always returned.
     """
     pass
 
 @staticmethod
 def write_opus(filename, data, sample_rate):
-    """ """
+    """
+    Writes an opus file containing the input pcm data.
+
+    Opus content is always encoded at 48kHz so the pcm data is resampled if sample_rate is
+    different from 48000.
+    """
     pass
 
 @staticmethod
