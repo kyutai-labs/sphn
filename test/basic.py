@@ -15,3 +15,7 @@ print(data.shape, sr)
 
 sphn.write_wav("bria.wav", data[0], sr)
 sphn.write_opus("bria.opus", data, sr)
+
+data_roundtrip, sr_roundtrip = sphn.read_opus("bria.opus")
+assert sr_roundtrip == 48000, "sample rate from opus file is not 48khz"
+data_resampled = sphn.resample(data, sr, sr_roundtrip)

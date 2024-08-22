@@ -249,6 +249,55 @@ fn write_opus(
     Ok(())
 }
 
+/// Resamples some pcm data.
+#[pyfunction]
+#[pyo3(signature = (pcm, src_sample_rate, dst_sample_rate))]
+fn resample(
+    pcm: numpy::PyReadonlyArrayDyn<f32>,
+    src_sample_rate: usize,
+    dst_sample_rate: usize,
+) -> PyResult<PyObject> {
+    let pcm = pcm.as_array();
+    match pcm.ndim() {
+        1 => {
+            let pcm = pcm.into_dimensionality::<numpy::Ix1>().w()?;
+            let pcm = match pcm.as_slice() {
+                None => {
+                    let pcm = pcm.to_vec();
+                    audio::resample(&pcm, src_sample_rate, dst_sample_rate).w()?
+                }
+                Some(pcm) => audio::resample(&pcm, src_sample_rate, dst_sample_rate).w()?,
+            };
+            Python::with_gil(|py| {
+                Ok::<_, PyErr>(numpy::PyArray1::from_vec_bound(py, pcm).into_py(py))
+            })
+        }
+        2 => {
+            let pcm = pcm.into_dimensionality::<numpy::Ix2>().w()?;
+            let (channels, l) = pcm.dim();
+            let pcm = pcm.into_shape((channels * l,)).w()?;
+            let pcm = match pcm.as_slice() {
+                None => {
+                    let pcm = pcm.to_vec();
+                    pcm.chunks(l)
+                        .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
+                        .collect::<anyhow::Result<Vec<_>>>()
+                        .w()?
+                }
+                Some(pcm) => pcm
+                    .chunks(l)
+                    .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
+                    .collect::<anyhow::Result<Vec<_>>>()
+                    .w()?,
+            };
+            Python::with_gil(|py| {
+                Ok::<_, PyErr>(numpy::PyArray2::from_vec2_bound(py, &pcm)?.into_py(py))
+            })
+        }
+        _ => py_bail!("expected one or two dimensions, got shape {:?}", pcm.shape()),
+    }
+}
+
 /// Reads the whole content of an ogg/opus encoded file.
 ///
 /// This returns a two dimensional array as well as the sample rate. Currently all opus audio is
@@ -285,5 +334,6 @@ fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read_opus, m)?)?;
     m.add_function(wrap_pyfunction!(read_opus_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(write_opus, m)?)?;
+    m.add_function(wrap_pyfunction!(resample, m)?)?;
     Ok(())
 }
