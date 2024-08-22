@@ -213,7 +213,8 @@ fn write_opus(
 
 /// Reads the whole content of an ogg/opus encoded file.
 ///
-/// This returns a two dimensional array as well as the sample rate.
+/// This returns a two dimensional array as well as the sample rate. Currently all opus audio is
+/// encoded at 48kHz so this value is always returned.
 #[pyfunction]
 #[pyo3(signature = (filename))]
 fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u32)> {
@@ -226,7 +227,8 @@ fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u3
 
 /// Reads bytes corresponding to an ogg/opus encoded file.
 ///
-/// This returns a two dimensional array as well as the sample rate.
+/// This returns a two dimensional array as well as the sample rate. Currently all opus audio is
+/// encoded at 48kHz so this value is always returned.
 #[pyfunction]
 #[pyo3(signature = (bytes))]
 fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(PyObject, u32)> {

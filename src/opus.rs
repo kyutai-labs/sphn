@@ -4,13 +4,22 @@ use anyhow::Result;
 // Using a different value would result in a BadArg "invalid argument" error when calling encode.
 // https://opus-codec.org/docs/opus_api-1.2/group__opus__encoder.html#ga4ae9905859cd241ef4bb5c59cd5e5309
 const OPUS_ENCODER_FRAME_SIZE: usize = 960;
+const OPUS_SAMPLE_RATE: u32 = 48000;
 
+/// See https://www.opus-codec.org/docs/opusfile_api-0.4/structOpusHead.html
 #[allow(unused)]
 #[derive(Debug)]
 struct OpusHeader {
     version: u8,
     channel_count: u8,
     pre_skip: u16,
+
+    /// The sampling rate of the original input.
+    ///
+    /// All Opus audio is coded at 48 kHz, and should also be decoded at 48 kHz for playback (unless
+    /// the target hardware does not support this sampling rate). However, this field may be used to
+    /// resample the audio back to the original sampling rate, for example, when saving the output
+    /// to a file.
     input_sample_rate: u32,
     output_gain: i16,
     mapping_family: u8,
@@ -53,7 +62,7 @@ pub fn read_ogg<R: std::io::Read + std::io::Seek>(reader: R) -> Result<(Vec<Vec<
                     2 => opus::Channels::Stereo,
                     c => anyhow::bail!("unexpected number of channels {c}"),
                 };
-                let od = opus::Decoder::new(header.input_sample_rate, channels)?;
+                let od = opus::Decoder::new(OPUS_SAMPLE_RATE, channels)?;
                 opus_decoder = Some(od)
             }
             (false, None) => anyhow::bail!("no initial OpusHead"),
