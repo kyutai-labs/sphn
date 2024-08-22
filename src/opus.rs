@@ -159,7 +159,7 @@ fn write_ogg_48khz<W: std::io::Write>(
     let mut total_data = 0;
     let n_frames = pcm.len() / (channels * OPUS_ENCODER_FRAME_SIZE);
     for (frame_idx, pcm) in pcm.chunks_exact(OPUS_ENCODER_FRAME_SIZE * channels).enumerate() {
-        total_data += pcm.len() as u64;
+        total_data += (pcm.len() / channels) as u64;
         let size = encoder.encode_float(pcm, &mut out_encoded)?;
         let msg = out_encoded[..size].to_vec();
         let inf = if frame_idx + 1 == n_frames {
@@ -190,11 +190,11 @@ pub fn write_ogg_stereo<W: std::io::Write>(
 ) -> Result<()> {
     if sample_rate == OPUS_SAMPLE_RATE {
         let pcm = pcm1.iter().zip(pcm2.iter()).flat_map(|(s1, s2)| [*s1, *s2]).collect::<Vec<_>>();
-        write_ogg_48khz(w, &pcm, sample_rate, false)
+        write_ogg_48khz(w, &pcm, sample_rate, true)
     } else {
         let pcm1 = crate::audio::resample(pcm1, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
         let pcm2 = crate::audio::resample(pcm2, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
         let pcm = pcm1.iter().zip(pcm2.iter()).flat_map(|(s1, s2)| [*s1, *s2]).collect::<Vec<_>>();
-        write_ogg_48khz(w, &pcm, sample_rate, false)
+        write_ogg_48khz(w, &pcm, sample_rate, true)
     }
 }
