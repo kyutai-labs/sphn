@@ -150,8 +150,10 @@ fn write_ogg_48khz<W: std::io::Write>(
     pw.write_packet(tags, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
 
     // Write the actual pcm data
-    let mut encoder =
-        opus::Encoder::new(OPUS_SAMPLE_RATE, opus::Channels::Mono, opus::Application::Voip)?;
+    let mut encoder = {
+        let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
+        opus::Encoder::new(OPUS_SAMPLE_RATE, channels, opus::Application::Voip)?
+    };
     let mut out_encoded = vec![0u8; 50_000];
 
     let mut total_data = 0;
@@ -176,6 +178,23 @@ pub fn write_ogg_mono<W: std::io::Write>(w: &mut W, pcm: &[f32], sample_rate: u3
         write_ogg_48khz(w, pcm, sample_rate, false)
     } else {
         let pcm = crate::audio::resample(pcm, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
+        write_ogg_48khz(w, &pcm, sample_rate, false)
+    }
+}
+
+pub fn write_ogg_stereo<W: std::io::Write>(
+    w: &mut W,
+    pcm1: &[f32],
+    pcm2: &[f32],
+    sample_rate: u32,
+) -> Result<()> {
+    if sample_rate == OPUS_SAMPLE_RATE {
+        let pcm = pcm1.iter().zip(pcm2.iter()).flat_map(|(s1, s2)| [*s1, *s2]).collect::<Vec<_>>();
+        write_ogg_48khz(w, &pcm, sample_rate, false)
+    } else {
+        let pcm1 = crate::audio::resample(pcm1, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
+        let pcm2 = crate::audio::resample(pcm2, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
+        let pcm = pcm1.iter().zip(pcm2.iter()).flat_map(|(s1, s2)| [*s1, *s2]).collect::<Vec<_>>();
         write_ogg_48khz(w, &pcm, sample_rate, false)
     }
 }

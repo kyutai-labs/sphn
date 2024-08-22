@@ -196,18 +196,55 @@ fn write_wav(
 #[pyo3(signature = (filename, data, sample_rate))]
 fn write_opus(
     filename: std::path::PathBuf,
-    data: numpy::PyReadonlyArray1<f32>,
+    data: numpy::PyReadonlyArrayDyn<f32>,
     sample_rate: u32,
 ) -> PyResult<()> {
+    let write_mono = |mut w: std::io::BufWriter<std::fs::File>,
+                      data: numpy::ndarray::ArrayView1<f32>| {
+        match data.as_slice() {
+            None => {
+                let data = data.to_vec();
+                opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate).w_f(&filename)
+            }
+            Some(data) => opus::write_ogg_mono(&mut w, data, sample_rate).w_f(&filename),
+        }
+    };
+
     let w = std::fs::File::create(&filename).w_f(&filename)?;
     let mut w = std::io::BufWriter::new(w);
     let data = data.as_array();
-    match data.as_slice() {
-        None => {
-            let data = data.to_vec();
-            opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate).w_f(&filename)?
+    match data.ndim() {
+        1 => {
+            let data = data.into_dimensionality::<numpy::Ix1>().w()?;
+            write_mono(w, data)?
         }
-        Some(data) => opus::write_ogg_mono(&mut w, data, sample_rate).w_f(&filename)?,
+        2 => {
+            let data = data.into_dimensionality::<numpy::Ix2>().w()?;
+            match data.shape() {
+                [1, l] => {
+                    let data = data.into_shape((*l,)).w()?;
+                    write_mono(w, data)?
+                }
+                [2, l] => {
+                    let data = data.into_shape((*l * 2,)).w()?;
+                    match data.as_slice() {
+                        None => {
+                            let data = data.to_vec();
+                            let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
+                            opus::write_ogg_stereo(&mut w, pcm1, pcm2, sample_rate)
+                                .w_f(&filename)?
+                        }
+                        Some(data) => {
+                            let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
+                            opus::write_ogg_stereo(&mut w, pcm1, pcm2, sample_rate)
+                                .w_f(&filename)?
+                        }
+                    }
+                }
+                _ => py_bail!("expected one or two channels, got shape {:?}", data.shape()),
+            }
+        }
+        _ => py_bail!("expected one or two dimensions, got shape {:?}", data.shape()),
     }
     Ok(())
 }
