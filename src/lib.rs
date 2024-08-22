@@ -266,7 +266,7 @@ fn resample(
                     let pcm = pcm.to_vec();
                     audio::resample(&pcm, src_sample_rate, dst_sample_rate).w()?
                 }
-                Some(pcm) => audio::resample(&pcm, src_sample_rate, dst_sample_rate).w()?,
+                Some(pcm) => audio::resample(pcm, src_sample_rate, dst_sample_rate).w()?,
             };
             Python::with_gil(|py| {
                 Ok::<_, PyErr>(numpy::PyArray1::from_vec_bound(py, pcm).into_py(py))
