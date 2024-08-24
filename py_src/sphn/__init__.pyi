@@ -43,6 +43,13 @@ def read_opus_bytes(bytes):
     pass
 
 @staticmethod
+def resample(pcm, src_sample_rate, dst_sample_rate):
+    """
+    Resamples some pcm data.
+    """
+    pass
+
+@staticmethod
 def write_opus(filename, data, sample_rate):
     """
     Writes an opus file containing the input pcm data.
@@ -111,4 +118,32 @@ class FileReader:
         """
         The sample rate as an int.
         """
+        pass
+
+class OpusStreamReader:
+    def __init__(sample_rate):
+        pass
+
+    def append_bytes(self, data):
+        """
+        Write some ogg/opus bytes to the current stream.
+        """
+        pass
+
+    def read_pcm(self):
+        """
+        Get some pcm data out of the stream.
+        """
+        pass
+
+class OpusStreamWriter:
+    def __init__(sample_rate):
+        pass
+
+    def append_pcm(self, pcm):
+        """ """
+        pass
+
+    def read_bytes(self):
+        """ """
         pass

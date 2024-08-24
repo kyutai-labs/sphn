@@ -5,6 +5,7 @@ use anyhow::Result;
 // https://opus-codec.org/docs/opus_api-1.2/group__opus__encoder.html#ga4ae9905859cd241ef4bb5c59cd5e5309
 const OPUS_ENCODER_FRAME_SIZE: usize = 960;
 const OPUS_SAMPLE_RATE: u32 = 48000;
+const OPUS_ALLOWED_FRAME_SIZES: [usize; 6] = [120, 240, 480, 960, 1920, 2880];
 
 /// See https://www.opus-codec.org/docs/opusfile_api-0.4/structOpusHead.html
 #[allow(unused)]
@@ -196,5 +197,142 @@ pub fn write_ogg_stereo<W: std::io::Write>(
         let pcm2 = crate::audio::resample(pcm2, sample_rate as usize, OPUS_SAMPLE_RATE as usize)?;
         let pcm = pcm1.iter().zip(pcm2.iter()).flat_map(|(s1, s2)| [*s1, *s2]).collect::<Vec<_>>();
         write_ogg_48khz(w, &pcm, sample_rate, true)
+    }
+}
+
+struct BufferStream(std::sync::mpsc::Sender<Vec<u8>>);
+
+impl std::io::Write for BufferStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.0.send(buf.to_vec()).is_err() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "opus stream writer error".to_string(),
+            ));
+        };
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+pub struct StreamWriter {
+    pw: ogg::PacketWriter<'static, BufferStream>,
+    encoder: opus::Encoder,
+    out_encoded: Vec<u8>,
+    total_data: u64,
+    rx: std::sync::mpsc::Receiver<Vec<u8>>,
+}
+
+impl StreamWriter {
+    pub fn new(sample_rate: u32) -> Result<Self> {
+        if sample_rate != 48000 && sample_rate != 24000 {
+            anyhow::bail!("sample-rate has to be 48000 or 24000, got {sample_rate}")
+        }
+        let encoder =
+            opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut pw = ogg::PacketWriter::new(BufferStream(tx));
+        let out_encoded = vec![0u8; 50_000];
+        let mut head = Vec::new();
+        write_opus_header(&mut head, 1u8, sample_rate)?;
+        pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+        let mut tags = Vec::new();
+        write_opus_tags(&mut tags)?;
+        pw.write_packet(tags, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+        Ok(Self { pw, encoder, out_encoded, total_data: 0, rx })
+    }
+
+    pub fn append_pcm(&mut self, pcm: &[f32]) -> Result<()> {
+        if !OPUS_ALLOWED_FRAME_SIZES.contains(&pcm.len()) {
+            anyhow::bail!(
+                "pcm length has to match an allowed frame size {OPUS_ALLOWED_FRAME_SIZES:?}, got {}", pcm.len()
+            )
+        }
+
+        let size = self.encoder.encode_float(pcm, &mut self.out_encoded)?;
+        let msg = self.out_encoded[..size].to_vec();
+        self.total_data += pcm.len() as u64;
+        self.pw.write_packet(msg, 42, ogg::PacketWriteEndInfo::EndPage, self.total_data)?;
+        Ok(())
+    }
+
+    pub fn read_bytes(&mut self) -> Result<Vec<u8>> {
+        match self.rx.try_recv() {
+            Ok(data) => Ok(data),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(vec![]),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                anyhow::bail!("opus stream writer disconnected")
+            }
+        }
+    }
+}
+
+pub struct StreamReader {
+    pr: ogg::reading::async_api::PacketReader<tokio::io::DuplexStream>,
+    decoder: opus::Decoder,
+    tx: tokio::io::DuplexStream,
+    runtime: tokio::runtime::Runtime,
+    pcm_buf: Vec<f32>,
+}
+
+// The StreamReader implementation uses tokio under the hood, this is a bit of a bummer and comes
+// from the ogg crate PacketReader non-async api requiring Seek on its input stream (and so not
+// having to keep much inner state), the async version just requires read so is more adapted to
+// what we want to provide here.
+impl StreamReader {
+    pub fn new(sample_rate: u32) -> Result<Self> {
+        if sample_rate != 48000 && sample_rate != 24000 {
+            anyhow::bail!("sample-rate has to be 48000 or 24000, got {sample_rate}")
+        }
+        // TODO(laurent): look whether there is a more adapted channel type.
+        let (tx, rx) = tokio::io::duplex(100_000);
+        let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
+        let pr = ogg::reading::async_api::PacketReader::new(rx);
+        // TODO(laurent): consider spawning a thread so that the process happens in the background.
+        let runtime = tokio::runtime::Runtime::new()?;
+        let pcm_buf = vec![0f32; 24_000 * 10];
+        Ok(Self { pr, decoder, tx, runtime, pcm_buf })
+    }
+
+    pub fn append(&mut self, data: &[u8]) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+
+        self.runtime.block_on({
+            // Maybe we should wait for a bit of time here to allow for the PacketReader to do some
+            // processing.
+            self.tx.write_all(data)
+        })?;
+        Ok(())
+    }
+
+    /// Returns None at the end of the stream and an empty slice if no data is currently available.
+    pub fn read_pcm(&mut self) -> Result<Option<&[f32]>> {
+        use futures_util::StreamExt;
+        use std::future::Future;
+
+        let waker = futures_util::task::noop_waker();
+        let mut cx = futures_util::task::Context::from_waker(&waker);
+        let mut next = self.pr.next();
+        let next = std::pin::Pin::new(&mut next);
+        let result = match next.poll(&mut cx) {
+            std::task::Poll::Ready(None) => None,
+            std::task::Poll::Ready(Some(packet)) => {
+                let packet = packet?;
+                if packet.data.starts_with(b"OpusHead") || packet.data.starts_with(b"OpusTags") {
+                    todo!();
+                }
+                let bytes_read = self.decoder.decode_float(
+                    &packet.data,
+                    &mut self.pcm_buf,
+                    /* Forward Error Correction */ false,
+                )?;
+                Some(&self.pcm_buf[..bytes_read])
+            }
+            std::task::Poll::Pending => Some(&self.pcm_buf[..0]),
+        };
+        Ok(result)
     }
 }
