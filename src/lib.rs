@@ -326,6 +326,38 @@ fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(PyObject, u32)> {
 }
 
 #[pyclass]
+struct OpusStreamWriter {
+    inner: opus::StreamWriter,
+    sample_rate: u32,
+}
+
+#[pymethods]
+impl OpusStreamWriter {
+    #[new]
+    fn new(sample_rate: u32) -> PyResult<Self> {
+        let inner = opus::StreamWriter::new(sample_rate).w()?;
+        Ok(Self { inner, sample_rate })
+    }
+
+    fn __str__(&self) -> String {
+        format!("OpusStreamWriter(sample_rate={})", self.sample_rate)
+    }
+
+    fn append(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<PyObject> {
+        let pcm = pcm.as_array();
+        let bytes = match pcm.as_slice() {
+            None => {
+                let pcm = pcm.to_vec();
+                self.inner.append_pcm(&pcm).w()?
+            }
+            Some(pcm) => self.inner.append_pcm(pcm).w()?,
+        };
+        let bytes = Python::with_gil(|py| pyo3::types::PyBytes::new_bound(py, &bytes).into_py(py));
+        Ok(bytes)
+    }
+}
+
+#[pyclass]
 struct OpusStreamReader {
     inner: opus::StreamReader,
     sample_rate: u32,
@@ -348,6 +380,7 @@ impl OpusStreamReader {
         self.inner.append(data).w()
     }
 
+    // TODO(laurent): maybe we should also have a pyo3_async api here.
     /// Get some pcm data out of the stream.
     fn read_pcm(&mut self) -> PyResult<PyObject> {
         let pcm_data = self.inner.read_pcm().w()?;
@@ -365,6 +398,7 @@ impl OpusStreamReader {
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FileReader>()?;
     m.add_class::<OpusStreamReader>()?;
+    m.add_class::<OpusStreamWriter>()?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
     m.add_function(wrap_pyfunction!(write_wav, m)?)?;

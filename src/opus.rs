@@ -199,6 +199,31 @@ pub fn write_ogg_stereo<W: std::io::Write>(
     }
 }
 
+pub struct StreamWriter {
+    pw: ogg::PacketWriter<'static, Vec<u8>>,
+    encoder: opus::Encoder,
+    out_encoded: Vec<u8>,
+    total_data: u64,
+}
+
+impl StreamWriter {
+    pub fn new(sample_rate: u32) -> Result<Self> {
+        let encoder =
+            opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
+        let pw = ogg::PacketWriter::new(Vec::new());
+        let out_encoded = vec![0u8; 50_000];
+        Ok(Self { pw, encoder, out_encoded, total_data: 0 })
+    }
+
+    pub fn append_pcm(&mut self, pcm: &[f32]) -> Result<Vec<u8>> {
+        let size = self.encoder.encode_float(pcm, &mut self.out_encoded)?;
+        let msg = self.out_encoded[..size].to_vec();
+        self.total_data += pcm.len() as u64;
+        self.pw.write_packet(msg, 42, ogg::PacketWriteEndInfo::EndPage, self.total_data)?;
+        Ok(vec![])
+    }
+}
+
 pub struct StreamReader {
     pr: ogg::reading::async_api::PacketReader<tokio::io::DuplexStream>,
     decoder: opus::Decoder,
