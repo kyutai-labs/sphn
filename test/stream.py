@@ -12,7 +12,16 @@ stream_writer = sphn.OpusStreamWriter(24000)
 packet_size = 960
 for lo in range(0, data.shape[-1], packet_size):
     up = lo + packet_size
-    packet = data[:, lo:up]
+    packet = data[0, lo:up]
     print(packet.shape)
-    stream_writer.append_pcm(packet[0])
+    if packet.shape[-1] != packet_size:
+        break
+    stream_writer.append_pcm(packet)
+
+with open("myfile.opus", "wb") as fobj:
+    while True:
+        opus = stream_writer.read_bytes()
+        if len(opus) == 0:
+            break
+        fobj.write(opus)
 

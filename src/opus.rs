@@ -286,10 +286,11 @@ impl StreamReader {
         if sample_rate != 48000 && sample_rate != 24000 {
             anyhow::bail!("sample-rate has to be 48000 or 24000, got {sample_rate}")
         }
-        // TODO: look whether there is a more adapted channel type.
+        // TODO(laurent): look whether there is a more adapted channel type.
         let (tx, rx) = tokio::io::duplex(100_000);
         let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
         let pr = ogg::reading::async_api::PacketReader::new(rx);
+        // TODO(laurent): consider spawning a thread so that the process happens in the background.
         let runtime = tokio::runtime::Runtime::new()?;
         let pcm_buf = vec![0f32; 24_000 * 10];
         Ok(Self { pr, decoder, tx, runtime, pcm_buf })
