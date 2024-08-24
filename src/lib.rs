@@ -325,9 +325,46 @@ fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(PyObject, u32)> {
     Ok((data, sample_rate))
 }
 
+#[pyclass]
+struct OpusStreamReader {
+    inner: opus::StreamReader,
+    sample_rate: u32,
+}
+
+#[pymethods]
+impl OpusStreamReader {
+    #[new]
+    fn new(sample_rate: u32) -> PyResult<Self> {
+        let inner = opus::StreamReader::new(sample_rate).w()?;
+        Ok(Self { inner, sample_rate })
+    }
+
+    fn __str__(&self) -> String {
+        format!("OpusStreamReader(sample_rate={})", self.sample_rate)
+    }
+
+    /// Write some ogg/opus bytes to the current stream.
+    fn append(&mut self, data: &[u8]) -> PyResult<()> {
+        self.inner.append(data).w()
+    }
+
+    /// Get some pcm data out of the stream.
+    fn read_pcm(&mut self) -> PyResult<PyObject> {
+        let pcm_data = self.inner.read_pcm().w()?;
+        Python::with_gil(|py| match pcm_data {
+            None => Ok(py.None()),
+            Some(data) => {
+                let data = numpy::PyArray1::from_vec_bound(py, data.to_vec()).into_py(py);
+                Ok(data)
+            }
+        })
+    }
+}
+
 #[pymodule]
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FileReader>()?;
+    m.add_class::<OpusStreamReader>()?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
     m.add_function(wrap_pyfunction!(write_wav, m)?)?;

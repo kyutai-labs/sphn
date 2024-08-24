@@ -198,3 +198,66 @@ pub fn write_ogg_stereo<W: std::io::Write>(
         write_ogg_48khz(w, &pcm, sample_rate, true)
     }
 }
+
+pub struct StreamReader {
+    pr: ogg::reading::async_api::PacketReader<tokio::io::DuplexStream>,
+    decoder: opus::Decoder,
+    tx: tokio::io::DuplexStream,
+    runtime: tokio::runtime::Runtime,
+    pcm_buf: Vec<f32>,
+}
+
+// The StreamReader implementation uses tokio under the hood, this is a bit of a bummer and comes
+// from the ogg crate PacketReader non-async api requiring Seek on its input stream (and so not
+// having to keep much inner state), the async version just requires read so is more adapted to
+// what we want to provide here.
+impl StreamReader {
+    pub fn new(sample_rate: u32) -> Result<Self> {
+        // TODO: look whether there is a more adapted channel type.
+        let (tx, rx) = tokio::io::duplex(100_000);
+        let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
+        let pr = ogg::reading::async_api::PacketReader::new(rx);
+        let runtime = tokio::runtime::Runtime::new()?;
+        let pcm_buf = vec![0f32; 24_000 * 10];
+        Ok(Self { pr, decoder, tx, runtime, pcm_buf })
+    }
+
+    pub fn append(&mut self, data: &[u8]) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+
+        self.runtime.block_on({
+            // Maybe we should wait for a bit of time here to allow for the PacketReader to do some
+            // processing.
+            self.tx.write_all(data)
+        })?;
+        Ok(())
+    }
+
+    /// Returns None at the end of the stream and an empty slice if no data is currently available.
+    pub fn read_pcm(&mut self) -> Result<Option<&[f32]>> {
+        use futures_util::StreamExt;
+        use std::future::Future;
+
+        let waker = futures_util::task::noop_waker();
+        let mut cx = futures_util::task::Context::from_waker(&waker);
+        let mut next = self.pr.next();
+        let next = std::pin::Pin::new(&mut next);
+        let result = match next.poll(&mut cx) {
+            std::task::Poll::Ready(None) => None,
+            std::task::Poll::Ready(Some(packet)) => {
+                let packet = packet?;
+                if packet.data.starts_with(b"OpusHead") || packet.data.starts_with(b"OpusTags") {
+                    todo!();
+                }
+                let bytes_read = self.decoder.decode_float(
+                    &packet.data,
+                    &mut self.pcm_buf,
+                    /* Forward Error Correction */ false,
+                )?;
+                Some(&self.pcm_buf[..bytes_read])
+            }
+            std::task::Poll::Pending => Some(&self.pcm_buf[..0]),
+        };
+        Ok(result)
+    }
+}
