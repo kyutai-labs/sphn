@@ -230,9 +230,13 @@ impl StreamWriter {
         let encoder =
             opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
         let (tx, rx) = std::sync::mpsc::channel();
-        let pw = ogg::PacketWriter::new(BufferStream(tx));
+        let mut pw = ogg::PacketWriter::new(BufferStream(tx));
         let out_encoded = vec![0u8; 50_000];
-        // TODO(laurent): Write the OpusHead and OpusTags packets.
+        let mut head = Vec::new();
+        write_opus_header(&mut head, 1u8, sample_rate)?;
+        pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+        let mut tags = Vec::new();
+        write_opus_tags(&mut tags)?;
         Ok(Self { pw, encoder, out_encoded, total_data: 0, rx })
     }
 
