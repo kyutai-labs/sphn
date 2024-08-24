@@ -25,3 +25,6 @@ with open("myfile.opus", "wb") as fobj:
             break
         fobj.write(opus)
 
+data_roundtrip, sr_roundtrip = sphn.read_opus("myfile.opus")
+print(data_roundtrip.shape, sr_roundtrip)
+sphn.write_opus("myfile2.opus", data_roundtrip, sr_roundtrip)

@@ -241,6 +241,7 @@ impl StreamWriter {
         pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
         let mut tags = Vec::new();
         write_opus_tags(&mut tags)?;
+        pw.write_packet(tags, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
         Ok(Self { pw, encoder, out_encoded, total_data: 0, rx })
     }
 
