@@ -5,6 +5,7 @@ use anyhow::Result;
 // https://opus-codec.org/docs/opus_api-1.2/group__opus__encoder.html#ga4ae9905859cd241ef4bb5c59cd5e5309
 const OPUS_ENCODER_FRAME_SIZE: usize = 960;
 const OPUS_SAMPLE_RATE: u32 = 48000;
+const OPUS_ALLOWED_FRAME_SIZES: [usize; 6] = [120, 240, 480, 960, 1920, 2880];
 
 /// See https://www.opus-codec.org/docs/opusfile_api-0.4/structOpusHead.html
 #[allow(unused)]
@@ -227,6 +228,9 @@ pub struct StreamWriter {
 
 impl StreamWriter {
     pub fn new(sample_rate: u32) -> Result<Self> {
+        if sample_rate != 48000 && sample_rate != 24000 {
+            anyhow::bail!("sample-rate has to be 48000 or 24000, got {sample_rate}")
+        }
         let encoder =
             opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
         let (tx, rx) = std::sync::mpsc::channel();
@@ -241,6 +245,12 @@ impl StreamWriter {
     }
 
     pub fn append_pcm(&mut self, pcm: &[f32]) -> Result<()> {
+        if !OPUS_ALLOWED_FRAME_SIZES.contains(&pcm.len()) {
+            anyhow::bail!(
+                "pcm length has to match an allowed frame size {OPUS_ALLOWED_FRAME_SIZES:?}, got {}", pcm.len()
+            )
+        }
+
         let size = self.encoder.encode_float(pcm, &mut self.out_encoded)?;
         let msg = self.out_encoded[..size].to_vec();
         self.total_data += pcm.len() as u64;
@@ -273,6 +283,9 @@ pub struct StreamReader {
 // what we want to provide here.
 impl StreamReader {
     pub fn new(sample_rate: u32) -> Result<Self> {
+        if sample_rate != 48000 && sample_rate != 24000 {
+            anyhow::bail!("sample-rate has to be 48000 or 24000, got {sample_rate}")
+        }
         // TODO: look whether there is a more adapted channel type.
         let (tx, rx) = tokio::io::duplex(100_000);
         let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
