@@ -124,7 +124,7 @@ class OpusStreamReader:
     def __init__(sample_rate):
         pass
 
-    def append(self, data):
+    def append_bytes(self, data):
         """
         Write some ogg/opus bytes to the current stream.
         """
@@ -134,4 +134,16 @@ class OpusStreamReader:
         """
         Get some pcm data out of the stream.
         """
+        pass
+
+class OpusStreamWriter:
+    def __init__(sample_rate):
+        pass
+
+    def append_pcm(self, pcm):
+        """ """
+        pass
+
+    def read_bytes(self):
+        """ """
         pass

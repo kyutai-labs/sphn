@@ -199,28 +199,59 @@ pub fn write_ogg_stereo<W: std::io::Write>(
     }
 }
 
+struct BufferStream(std::sync::mpsc::Sender<Vec<u8>>);
+
+impl std::io::Write for BufferStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.0.send(buf.to_vec()).is_err() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "opus stream writer error".to_string(),
+            ));
+        };
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct StreamWriter {
-    pw: ogg::PacketWriter<'static, Vec<u8>>,
+    pw: ogg::PacketWriter<'static, BufferStream>,
     encoder: opus::Encoder,
     out_encoded: Vec<u8>,
     total_data: u64,
+    rx: std::sync::mpsc::Receiver<Vec<u8>>,
 }
 
 impl StreamWriter {
     pub fn new(sample_rate: u32) -> Result<Self> {
         let encoder =
             opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
-        let pw = ogg::PacketWriter::new(Vec::new());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let pw = ogg::PacketWriter::new(BufferStream(tx));
         let out_encoded = vec![0u8; 50_000];
-        Ok(Self { pw, encoder, out_encoded, total_data: 0 })
+        // TODO(laurent): Write the OpusHead and OpusTags packets.
+        Ok(Self { pw, encoder, out_encoded, total_data: 0, rx })
     }
 
-    pub fn append_pcm(&mut self, pcm: &[f32]) -> Result<Vec<u8>> {
+    pub fn append_pcm(&mut self, pcm: &[f32]) -> Result<()> {
         let size = self.encoder.encode_float(pcm, &mut self.out_encoded)?;
         let msg = self.out_encoded[..size].to_vec();
         self.total_data += pcm.len() as u64;
         self.pw.write_packet(msg, 42, ogg::PacketWriteEndInfo::EndPage, self.total_data)?;
-        Ok(vec![])
+        Ok(())
+    }
+
+    pub fn read_bytes(&mut self) -> Result<Vec<u8>> {
+        match self.rx.try_recv() {
+            Ok(data) => Ok(data),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(vec![]),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                anyhow::bail!("opus stream writer disconnected")
+            }
+        }
     }
 }
 

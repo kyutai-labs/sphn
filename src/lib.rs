@@ -343,15 +343,20 @@ impl OpusStreamWriter {
         format!("OpusStreamWriter(sample_rate={})", self.sample_rate)
     }
 
-    fn append(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<PyObject> {
+    fn append_pcm(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<()> {
         let pcm = pcm.as_array();
-        let bytes = match pcm.as_slice() {
+        match pcm.as_slice() {
             None => {
                 let pcm = pcm.to_vec();
                 self.inner.append_pcm(&pcm).w()?
             }
             Some(pcm) => self.inner.append_pcm(pcm).w()?,
         };
+        Ok(())
+    }
+
+    fn read_bytes(&mut self) -> PyResult<PyObject> {
+        let bytes = self.inner.read_bytes().w()?;
         let bytes = Python::with_gil(|py| pyo3::types::PyBytes::new_bound(py, &bytes).into_py(py));
         Ok(bytes)
     }
@@ -376,7 +381,7 @@ impl OpusStreamReader {
     }
 
     /// Write some ogg/opus bytes to the current stream.
-    fn append(&mut self, data: &[u8]) -> PyResult<()> {
+    fn append_bytes(&mut self, data: &[u8]) -> PyResult<()> {
         self.inner.append(data).w()
     }
 
