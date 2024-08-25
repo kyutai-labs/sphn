@@ -41,6 +41,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
+          container: messense/manylinux2014-cross
           docker-options: |
             -e LIBOPUS_STATIC=1
             -e OPUS_STATIC=1
