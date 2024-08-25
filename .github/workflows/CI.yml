@@ -21,6 +21,8 @@ permissions:
 env:
   LIBOPUS_STATIC: 1
   OPUS_STATIC: 1
+  LIBOPUS_NO_PKG: 1
+  OPUS_NO_PKG: 1
 
 jobs:
   linux:
@@ -42,6 +44,8 @@ jobs:
           docker-options: |
             -e LIBOPUS_STATIC=1
             -e OPUS_STATIC=1
+            -e LIBOPUS_NO_PKG=1
+            -e OPUS_NO_PKG=1
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v3
