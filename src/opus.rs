@@ -200,9 +200,9 @@ pub fn write_ogg_stereo<W: std::io::Write>(
     }
 }
 
-struct BufferStream(std::sync::mpsc::Sender<Vec<u8>>);
+struct BufferStreamW(std::sync::mpsc::Sender<Vec<u8>>);
 
-impl std::io::Write for BufferStream {
+impl std::io::Write for BufferStreamW {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.0.send(buf.to_vec()).is_err() {
             return Err(std::io::Error::new(
@@ -219,7 +219,7 @@ impl std::io::Write for BufferStream {
 }
 
 pub struct StreamWriter {
-    pw: ogg::PacketWriter<'static, BufferStream>,
+    pw: ogg::PacketWriter<'static, BufferStreamW>,
     encoder: opus::Encoder,
     out_encoded: Vec<u8>,
     total_data: u64,
@@ -234,7 +234,7 @@ impl StreamWriter {
         let encoder =
             opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut pw = ogg::PacketWriter::new(BufferStream(tx));
+        let mut pw = ogg::PacketWriter::new(BufferStreamW(tx));
         let out_encoded = vec![0u8; 50_000];
         let mut head = Vec::new();
         write_opus_header(&mut head, 1u8, sample_rate)?;
@@ -270,69 +270,104 @@ impl StreamWriter {
     }
 }
 
-pub struct StreamReader {
-    pr: ogg::reading::async_api::PacketReader<tokio::io::DuplexStream>,
-    decoder: opus::Decoder,
-    tx: tokio::io::DuplexStream,
-    runtime: tokio::runtime::Runtime,
-    pcm_buf: Vec<f32>,
+pub struct BufferedReceiver {
+    rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    data: std::io::Cursor<Vec<u8>>,
 }
 
-// The StreamReader implementation uses tokio under the hood, this is a bit of a bummer and comes
-// from the ogg crate PacketReader non-async api requiring Seek on its input stream (and so not
-// having to keep much inner state), the async version just requires read so is more adapted to
-// what we want to provide here.
+pub fn seekable_channel() -> (std::sync::mpsc::Sender<Vec<u8>>, BufferedReceiver) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let rx = BufferedReceiver { rx, data: std::io::Cursor::new(vec![]) };
+    (tx, rx)
+}
+
+impl std::io::Seek for BufferedReceiver {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.data.seek(pos)
+    }
+}
+
+impl std::io::Read for BufferedReceiver {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        match self.data.read(buf) {
+            Ok(0) => {
+                match self.rx.recv() {
+                    Ok(data) => {
+                        self.data.get_mut().extend_from_slice(&data);
+                        self.read(buf)
+                        // push
+                    }
+                    Err(_) => {
+                        Ok(0) // end of stream
+                    }
+                }
+            }
+            ok_or_err => ok_or_err,
+        }
+    }
+}
+
+pub struct StreamReader {
+    opus_tx: std::sync::mpsc::Sender<Vec<u8>>,
+    pcm_rx: std::sync::mpsc::Receiver<anyhow::Result<Vec<f32>>>,
+}
+
 impl StreamReader {
     pub fn new(sample_rate: u32) -> Result<Self> {
         if sample_rate != 48000 && sample_rate != 24000 {
             anyhow::bail!("sample-rate has to be 48000 or 24000, got {sample_rate}")
         }
-        // TODO(laurent): look whether there is a more adapted channel type.
-        let (tx, rx) = tokio::io::duplex(100_000);
-        let decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
-        let pr = ogg::reading::async_api::PacketReader::new(rx);
-        // TODO(laurent): consider spawning a thread so that the process happens in the background.
-        let runtime = tokio::runtime::Runtime::new()?;
-        let pcm_buf = vec![0f32; 24_000 * 10];
-        Ok(Self { pr, decoder, tx, runtime, pcm_buf })
+        let mut decoder = opus::Decoder::new(sample_rate, opus::Channels::Mono)?;
+        let (opus_tx, opus_rx) = seekable_channel();
+        let (pcm_tx, pcm_rx) = std::sync::mpsc::channel();
+        let mut pr = ogg::PacketReader::new(opus_rx);
+        let mut pcm_buf = vec![0f32; 24_000 * 10];
+        std::thread::spawn(move || {
+            while let Ok(packet) = pr.read_packet() {
+                let packet = match packet {
+                    None => break,
+                    Some(packet) => packet,
+                };
+                if packet.data.starts_with(b"OpusHead") || packet.data.starts_with(b"OpusTags") {
+                    continue;
+                }
+                let bytes_read = decoder.decode_float(
+                    &packet.data,
+                    &mut pcm_buf,
+                    /* Forward Error Correction */ false,
+                );
+                match bytes_read {
+                    Err(err) => {
+                        if pcm_tx.send(Err(err.into())).is_err() {
+                            break;
+                        };
+                        break;
+                    }
+                    Ok(n) => {
+                        if pcm_tx.send(Ok(pcm_buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        Ok(Self { opus_tx, pcm_rx })
     }
 
-    pub fn append(&mut self, data: &[u8]) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-
-        self.runtime.block_on({
-            // Maybe we should wait for a bit of time here to allow for the PacketReader to do some
-            // processing.
-            self.tx.write_all(data)
-        })?;
+    pub fn append(&mut self, data: Vec<u8>) -> Result<()> {
+        self.opus_tx.send(data)?;
         Ok(())
     }
 
     /// Returns None at the end of the stream and an empty slice if no data is currently available.
-    pub fn read_pcm(&mut self) -> Result<Option<&[f32]>> {
-        use futures_util::StreamExt;
-        use std::future::Future;
-
-        let waker = futures_util::task::noop_waker();
-        let mut cx = futures_util::task::Context::from_waker(&waker);
-        let mut next = self.pr.next();
-        let next = std::pin::Pin::new(&mut next);
-        let result = match next.poll(&mut cx) {
-            std::task::Poll::Ready(None) => None,
-            std::task::Poll::Ready(Some(packet)) => {
-                let packet = packet?;
-                if packet.data.starts_with(b"OpusHead") || packet.data.starts_with(b"OpusTags") {
-                    todo!();
-                }
-                let bytes_read = self.decoder.decode_float(
-                    &packet.data,
-                    &mut self.pcm_buf,
-                    /* Forward Error Correction */ false,
-                )?;
-                Some(&self.pcm_buf[..bytes_read])
-            }
-            std::task::Poll::Pending => Some(&self.pcm_buf[..0]),
-        };
-        Ok(result)
+    pub fn read_pcm(&mut self) -> Result<Option<Vec<f32>>> {
+        match self.pcm_rx.try_recv() {
+            Ok(data) => Ok(Some(data?)),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(Some(vec![])),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Ok(None),
+        }
     }
 }

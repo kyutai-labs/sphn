@@ -382,7 +382,7 @@ impl OpusStreamReader {
 
     /// Write some ogg/opus bytes to the current stream.
     fn append_bytes(&mut self, data: &[u8]) -> PyResult<()> {
-        self.inner.append(data).w()
+        self.inner.append(data.to_vec()).w()
     }
 
     // TODO(laurent): maybe we should also have a pyo3_async api here.

@@ -10,9 +10,8 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.79"
 byteorder = "1.5.0"
-futures-util = "0.3.30"
 numpy = "0.21.0"
-ogg = { version = "0.9.1", features = ["async"] }
+ogg = "0.9.1"
 opus = "0.3.0"
 pyo3 = "0.21.0"
 rayon = "1.8.1"
@@ -20,7 +19,6 @@ rubato = "0.15.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.113"
 symphonia = { version = "0.5.4", features = ["all"] }
-tokio = { version = "1.39.3", features = ["full"] }
 
 [profile.release]
 debug = true
