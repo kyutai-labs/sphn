@@ -311,7 +311,7 @@ impl std::io::Read for BufferedReceiver {
 }
 
 pub struct StreamReader {
-    opus_tx: std::sync::mpsc::Sender<Vec<u8>>,
+    opus_tx: Option<std::sync::mpsc::Sender<Vec<u8>>>,
     pcm_rx: std::sync::mpsc::Receiver<anyhow::Result<Vec<f32>>>,
 }
 
@@ -354,12 +354,20 @@ impl StreamReader {
                 }
             }
         });
-        Ok(Self { opus_tx, pcm_rx })
+        Ok(Self { opus_tx: Some(opus_tx), pcm_rx })
     }
 
     pub fn append(&mut self, data: Vec<u8>) -> Result<()> {
-        self.opus_tx.send(data)?;
+        match self.opus_tx.as_ref() {
+            Some(opus_tx) => opus_tx.send(data)?,
+            None => anyhow::bail!("StreamReader has been closed"),
+        }
         Ok(())
+    }
+
+    pub fn close(&mut self) {
+        // This triggers the drop of the channel if any and the thread will stop.
+        self.opus_tx = None
     }
 
     /// Returns None at the end of the stream and an empty slice if no data is currently available.

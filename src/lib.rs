@@ -397,6 +397,10 @@ impl OpusStreamReader {
             }
         })
     }
+
+    fn close(&mut self) {
+        self.inner.close()
+    }
 }
 
 #[pymodule]
