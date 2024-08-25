@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0.79"
+audiopus_sys = { version = "0.2.2", features = ["static"] }
 byteorder = "1.5.0"
 numpy = "0.21.0"
 ogg = "0.9.1"
