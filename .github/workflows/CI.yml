@@ -39,6 +39,9 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
+          docker-options: |
+            -e LIBOPUS_STATIC=1
+            -e OPUS_STATIC=1
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v3
