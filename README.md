@@ -1,8 +1,17 @@
 # sphn
 
-Python bindings for the [symphonia
-crate](https://github.com/pdeljanov/Symphonia), easily load various audio file
-formats into numpy arrays.
+Python bindings for the [symphonia](https://github.com/pdeljanov/Symphonia) and
+[opus](https://github.com/SpaceManiac/opus-rs) crates.
+- Easily load various audio file formats into numpy arrays.
+- Read/write ogg/opus audio files with streaming support.
+
+## Installation
+
+The python wheels are available on [pypi](https://pypi.org/project/sphn/).
+
+```bash
+pip install sphn
+```
 
 ## Usage
 
