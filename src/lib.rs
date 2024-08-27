@@ -343,6 +343,8 @@ impl OpusStreamWriter {
         format!("OpusStreamWriter(sample_rate={})", self.sample_rate)
     }
 
+    /// Appends one frame of pcm data to the stream. The data should be a 1d numpy array using
+    /// float values, the number of elements must be an allowed frame size, e.g. 960 or 1920.
     fn append_pcm(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<()> {
         let pcm = pcm.as_array();
         match pcm.as_slice() {
@@ -355,6 +357,8 @@ impl OpusStreamWriter {
         Ok(())
     }
 
+    /// Gets the pending opus bytes from the stream. An empty bytes object is returned if no data
+    /// is currently available.
     fn read_bytes(&mut self) -> PyResult<PyObject> {
         let bytes = self.inner.read_bytes().w()?;
         let bytes = Python::with_gil(|py| pyo3::types::PyBytes::new_bound(py, &bytes).into_py(py));
@@ -380,13 +384,14 @@ impl OpusStreamReader {
         format!("OpusStreamReader(sample_rate={})", self.sample_rate)
     }
 
-    /// Write some ogg/opus bytes to the current stream.
+    /// Writes some ogg/opus bytes to the current stream.
     fn append_bytes(&mut self, data: &[u8]) -> PyResult<()> {
         self.inner.append(data.to_vec()).w()
     }
 
     // TODO(laurent): maybe we should also have a pyo3_async api here.
-    /// Get some pcm data out of the stream.
+    /// Gets the pcm data decoded by the stream, this returns a 1d numpy array or None if the
+    /// stream has been closed. The array is empty if no data is currently available.
     fn read_pcm(&mut self) -> PyResult<PyObject> {
         let pcm_data = self.inner.read_pcm().w()?;
         Python::with_gil(|py| match pcm_data {
@@ -398,6 +403,8 @@ impl OpusStreamReader {
         })
     }
 
+    /// Closes the stream, this results in the worker thread exiting and the follow up
+    /// calls to `read_pcm` will return None once all the pcm data has been returned.
     fn close(&mut self) {
         self.inner.close()
     }
