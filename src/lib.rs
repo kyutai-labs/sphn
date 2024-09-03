@@ -249,6 +249,18 @@ fn write_opus(
     Ok(())
 }
 
+fn to_cow<'a, T: ToOwned + Clone>(
+    data: &'a numpy::ndarray::ArrayBase<numpy::ndarray::ViewRepr<&T>, numpy::ndarray::Ix1>,
+) -> std::borrow::Cow<'a, [T]>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    match data.as_slice() {
+        None => std::borrow::Cow::Owned(data.to_vec()),
+        Some(data) => std::borrow::Cow::Borrowed(data),
+    }
+}
+
 /// Resamples some pcm data.
 #[pyfunction]
 #[pyo3(signature = (pcm, src_sample_rate, dst_sample_rate))]
@@ -261,13 +273,8 @@ fn resample(
     match pcm.ndim() {
         1 => {
             let pcm = pcm.into_dimensionality::<numpy::Ix1>().w()?;
-            let pcm = match pcm.as_slice() {
-                None => {
-                    let pcm = pcm.to_vec();
-                    audio::resample(&pcm, src_sample_rate, dst_sample_rate).w()?
-                }
-                Some(pcm) => audio::resample(pcm, src_sample_rate, dst_sample_rate).w()?,
-            };
+            let pcm = to_cow(&pcm);
+            let pcm = audio::resample(&pcm[..], src_sample_rate, dst_sample_rate).w()?;
             Python::with_gil(|py| {
                 Ok::<_, PyErr>(numpy::PyArray1::from_vec_bound(py, pcm).into_py(py))
             })
