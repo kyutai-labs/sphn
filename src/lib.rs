@@ -178,13 +178,8 @@ fn write_wav(
     let w = std::fs::File::create(&filename).w_f(&filename)?;
     let mut w = std::io::BufWriter::new(w);
     let data = data.as_array();
-    match data.as_slice() {
-        None => {
-            let data = data.to_vec();
-            wav::write(&mut w, data.as_ref(), sample_rate).w_f(&filename)?
-        }
-        Some(data) => wav::write(&mut w, data, sample_rate).w_f(&filename)?,
-    }
+    let data = to_cow(&data);
+    wav::write(&mut w, &data, sample_rate).w_f(&filename)?;
     Ok(())
 }
 
@@ -201,13 +196,8 @@ fn write_opus(
 ) -> PyResult<()> {
     let write_mono = |mut w: std::io::BufWriter<std::fs::File>,
                       data: numpy::ndarray::ArrayView1<f32>| {
-        match data.as_slice() {
-            None => {
-                let data = data.to_vec();
-                opus::write_ogg_mono(&mut w, data.as_ref(), sample_rate).w_f(&filename)
-            }
-            Some(data) => opus::write_ogg_mono(&mut w, data, sample_rate).w_f(&filename),
-        }
+        let data = to_cow(&data);
+        opus::write_ogg_mono(&mut w, &data, sample_rate).w_f(&filename)
     };
 
     let w = std::fs::File::create(&filename).w_f(&filename)?;
@@ -227,19 +217,9 @@ fn write_opus(
                 }
                 [2, l] => {
                     let data = data.into_shape((*l * 2,)).w()?;
-                    match data.as_slice() {
-                        None => {
-                            let data = data.to_vec();
-                            let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
-                            opus::write_ogg_stereo(&mut w, pcm1, pcm2, sample_rate)
-                                .w_f(&filename)?
-                        }
-                        Some(data) => {
-                            let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
-                            opus::write_ogg_stereo(&mut w, pcm1, pcm2, sample_rate)
-                                .w_f(&filename)?
-                        }
-                    }
+                    let data = to_cow(&data);
+                    let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
+                    opus::write_ogg_stereo(&mut w, pcm1, pcm2, sample_rate).w_f(&filename)?
                 }
                 _ => py_bail!("expected one or two channels, got shape {:?}", data.shape()),
             }
@@ -250,7 +230,7 @@ fn write_opus(
 }
 
 fn to_cow<'a, T: ToOwned + Clone>(
-    data: &'a numpy::ndarray::ArrayBase<numpy::ndarray::ViewRepr<&T>, numpy::ndarray::Ix1>,
+    data: &'a numpy::ndarray::ArrayView1<T>,
 ) -> std::borrow::Cow<'a, [T]>
 where
     [T]: ToOwned<Owned = Vec<T>>,
@@ -283,20 +263,11 @@ fn resample(
             let pcm = pcm.into_dimensionality::<numpy::Ix2>().w()?;
             let (channels, l) = pcm.dim();
             let pcm = pcm.into_shape((channels * l,)).w()?;
-            let pcm = match pcm.as_slice() {
-                None => {
-                    let pcm = pcm.to_vec();
-                    pcm.chunks(l)
-                        .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
-                        .collect::<anyhow::Result<Vec<_>>>()
-                        .w()?
-                }
-                Some(pcm) => pcm
-                    .chunks(l)
-                    .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
-                    .collect::<anyhow::Result<Vec<_>>>()
-                    .w()?,
-            };
+            let pcm = to_cow(&pcm)
+                .chunks(l)
+                .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
+                .collect::<anyhow::Result<Vec<_>>>()
+                .w()?;
             Python::with_gil(|py| {
                 Ok::<_, PyErr>(numpy::PyArray2::from_vec2_bound(py, &pcm)?.into_py(py))
             })
@@ -354,13 +325,8 @@ impl OpusStreamWriter {
     /// float values, the number of elements must be an allowed frame size, e.g. 960 or 1920.
     fn append_pcm(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<()> {
         let pcm = pcm.as_array();
-        match pcm.as_slice() {
-            None => {
-                let pcm = pcm.to_vec();
-                self.inner.append_pcm(&pcm).w()?
-            }
-            Some(pcm) => self.inner.append_pcm(pcm).w()?,
-        };
+        let pcm = to_cow(&pcm);
+        self.inner.append_pcm(&pcm).w()?;
         Ok(())
     }
 
