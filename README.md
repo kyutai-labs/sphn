@@ -28,5 +28,5 @@ data, sample_rate = sphn.read("bria.mp3")
 print(data.shape, sample_rate)
 
 # Save as wav
-sphn.write_wav("bria.wav", data[0], sr)
+sphn.write_wav("bria.wav", data[0], sample_rate)
 ```
