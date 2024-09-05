@@ -108,7 +108,10 @@ def pyi_file(obj, indent=""):
 
         # Init
         if obj.__text_signature__:
-            body += f"{indent}def __init__{obj.__text_signature__}:\n"
+            ts = obj.__text_signature__
+            if len(ts) > 1 and ts.startswith("(") and not ts.startswith("(self"):
+                ts = "(self, " + ts[1:]
+            body += f"{indent}def __init__{ts}:\n"
             body += f"{indent+INDENT}pass\n"
             body += "\n"
 

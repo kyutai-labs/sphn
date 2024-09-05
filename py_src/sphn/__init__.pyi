@@ -70,7 +70,7 @@ def write_wav(filename, data, sample_rate):
     pass
 
 class FileReader:
-    def __init__(path):
+    def __init__(self, path):
         pass
 
     @property
@@ -121,7 +121,7 @@ class FileReader:
         pass
 
 class OpusStreamReader:
-    def __init__(sample_rate):
+    def __init__(self, sample_rate):
         pass
 
     def append_bytes(self, data):
@@ -145,7 +145,7 @@ class OpusStreamReader:
         pass
 
 class OpusStreamWriter:
-    def __init__(sample_rate):
+    def __init__(self, sample_rate):
         pass
 
     def append_pcm(self, pcm):
