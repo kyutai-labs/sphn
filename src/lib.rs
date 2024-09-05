@@ -172,14 +172,43 @@ fn read(
 #[pyo3(signature = (filename, data, sample_rate))]
 fn write_wav(
     filename: std::path::PathBuf,
-    data: numpy::PyReadonlyArray1<f32>,
+    data: numpy::PyReadonlyArrayDyn<f32>,
     sample_rate: u32,
 ) -> PyResult<()> {
     let w = std::fs::File::create(&filename).w_f(&filename)?;
     let mut w = std::io::BufWriter::new(w);
     let data = data.as_array();
-    let data = to_cow(&data);
-    wav::write(&mut w, &data, sample_rate).w_f(&filename)?;
+    match data.ndim() {
+        1 => {
+            let data = data.into_dimensionality::<numpy::Ix1>().w()?;
+            let data = to_cow(&data);
+            wav::write_mono(&mut w, &data, sample_rate).w_f(&filename)?;
+        }
+        2 => {
+            let data = data.into_dimensionality::<numpy::Ix2>().w()?;
+            match data.shape() {
+                [1, l] => {
+                    let data = data.into_shape((*l,)).w()?;
+                    let data = to_cow(&data);
+                    wav::write_mono(&mut w, &data, sample_rate).w_f(&filename)?;
+                }
+                [2, l] => {
+                    let data = data.into_shape((2 * *l,)).w()?;
+                    let data = to_cow(&data);
+                    let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
+                    let data = pcm1
+                        .iter()
+                        .zip(pcm2.iter())
+                        .flat_map(|(s1, s2)| [*s1, *s2])
+                        .collect::<Vec<_>>();
+                    println!("{:?}", &data[..20]);
+                    wav::write_stereo(&mut w, &data, sample_rate).w_f(&filename)?
+                }
+                _ => py_bail!("expected one or two channels, got shape {:?}", data.shape()),
+            }
+        }
+        _ => py_bail!("expected one or two dimensions, got shape {:?}", data.shape()),
+    }
     Ok(())
 }
 
