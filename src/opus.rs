@@ -200,16 +200,30 @@ pub fn write_ogg_stereo<W: std::io::Write>(
     }
 }
 
-struct BufferStreamW(std::sync::mpsc::Sender<Vec<u8>>);
+struct BufferStreamW {
+    sender: std::sync::mpsc::Sender<Vec<u8>>,
+    page_buffer: Vec<u8>,
+}
+
+impl BufferStreamW {
+    fn new(sender: std::sync::mpsc::Sender<Vec<u8>>) -> Self {
+        let page_buffer = Vec::with_capacity(32768);
+        Self { sender, page_buffer }
+    }
+
+    fn on_end_of_packet(&mut self) -> Result<()> {
+        if !self.page_buffer.is_empty() {
+            let mut to_send = Vec::with_capacity(32768);
+            std::mem::swap(&mut self.page_buffer, &mut to_send);
+            self.sender.send(to_send)?
+        }
+        Ok(())
+    }
+}
 
 impl std::io::Write for BufferStreamW {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.0.send(buf.to_vec()).is_err() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "opus stream writer error".to_string(),
-            ));
-        };
+        self.page_buffer.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -234,14 +248,16 @@ impl StreamWriter {
         let encoder =
             opus::Encoder::new(sample_rate, opus::Channels::Mono, opus::Application::Voip)?;
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut pw = ogg::PacketWriter::new(BufferStreamW(tx));
+        let mut pw = ogg::PacketWriter::new(BufferStreamW::new(tx));
         let out_encoded = vec![0u8; 50_000];
         let mut head = Vec::new();
         write_opus_header(&mut head, 1u8, sample_rate)?;
         pw.write_packet(head, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+        pw.inner_mut().on_end_of_packet()?;
         let mut tags = Vec::new();
         write_opus_tags(&mut tags)?;
         pw.write_packet(tags, 42, ogg::PacketWriteEndInfo::EndPage, 0)?;
+        pw.inner_mut().on_end_of_packet()?;
         Ok(Self { pw, encoder, out_encoded, total_data: 0, rx })
     }
 
@@ -256,6 +272,7 @@ impl StreamWriter {
         let msg = self.out_encoded[..size].to_vec();
         self.total_data += pcm.len() as u64;
         self.pw.write_packet(msg, 42, ogg::PacketWriteEndInfo::EndPage, self.total_data)?;
+        self.pw.inner_mut().on_end_of_packet()?;
         Ok(())
     }
 
