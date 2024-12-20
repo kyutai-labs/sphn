@@ -81,12 +81,7 @@ impl FileReader {
     fn decode(&mut self, start_sec: f64, duration_sec: f64, py: Python) -> PyResult<PyObject> {
         let (data, _unpadded_len) =
             self.inner.decode(start_sec, duration_sec, false).w_f(&self.path)?;
-        Ok(numpy::PyArray2::from_vec2(py, &data)
-            .unwrap()
-            .into_pyobject(py)
-            .unwrap()
-            .into_any()
-            .unbind())
+        Ok(numpy::PyArray2::from_vec2(py, &data)?.into_any().unbind())
     }
 
     /// Decodes the audio data from `start_sec` to `start_sec + duration_sec` and return the PCM
