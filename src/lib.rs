@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 mod audio;
 mod opus;
 mod wav;
