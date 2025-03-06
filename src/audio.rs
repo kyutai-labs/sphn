@@ -278,6 +278,10 @@ impl FileReader {
 pub fn resample(pcm_in: &[f32], sr_in: usize, sr_out: usize) -> anyhow::Result<Vec<f32>> {
     use rubato::Resampler;
 
+    if sr_in == sr_out {
+        return Ok(pcm_in.to_vec());
+    }
+
     let mut pcm_out =
         Vec::with_capacity((pcm_in.len() as f64 * sr_out as f64 / sr_in as f64) as usize + 1024);
 
