@@ -129,6 +129,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: wheels
+          path: dist
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv publish --trusted-publishing always
