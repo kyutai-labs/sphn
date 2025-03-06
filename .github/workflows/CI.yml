@@ -49,7 +49,7 @@ jobs:
             -e OPUS_NO_PKG=1
           manylinux: auto
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
@@ -72,7 +72,7 @@ jobs:
           args: --release --out dist --interpreter '3.8 3.9 3.10 3.11 3.12 3.13'
           sccache: 'true'
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
@@ -94,7 +94,7 @@ jobs:
           args: --release --out dist --interpreter '3.8 3.9 3.10 3.11 3.12 3.13'
           sccache: 'true'
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
@@ -109,7 +109,7 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
