@@ -129,8 +129,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: wheels
-      - name: Publish to PyPI
-        uses: PyO3/maturin-action@v1
-        with:
-          command: upload
-          args: --non-interactive --skip-existing *
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv build
+      - run: uv publish --trusted-publishing always
