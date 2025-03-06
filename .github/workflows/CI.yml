@@ -131,5 +131,4 @@ jobs:
           name: wheels
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv build
       - run: uv publish --trusted-publishing always
