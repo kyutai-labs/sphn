@@ -19,6 +19,7 @@ numpy = "0.23.0"
 ogg = "0.9.1"
 opus = "0.3.0"
 pyo3 = "0.23.0"
+rand = "0.8.5"
 rayon = "1.8.1"
 rubato = "0.15.0"
 serde = { version = "1.0", features = ["derive"] }
