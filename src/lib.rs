@@ -1,6 +1,7 @@
-#![allow(deprecated)]
 mod audio;
+mod dataset;
 mod opus;
+mod par_map;
 mod wav;
 
 use pyo3::prelude::*;
@@ -190,12 +191,12 @@ fn write_wav(
             let data = data.into_dimensionality::<numpy::Ix2>().w()?;
             match data.shape() {
                 [1, l] => {
-                    let data = data.into_shape((*l,)).w()?;
+                    let data = data.into_shape_with_order((*l,)).w()?;
                     let data = to_cow(&data);
                     wav::write_mono(&mut w, &data, sample_rate).w_f(&filename)?;
                 }
                 [2, l] => {
-                    let data = data.into_shape((2 * *l,)).w()?;
+                    let data = data.into_shape_with_order((2 * *l,)).w()?;
                     let data = to_cow(&data);
                     let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
                     let data = pcm1
@@ -243,11 +244,11 @@ fn write_opus(
             let data = data.into_dimensionality::<numpy::Ix2>().w()?;
             match data.shape() {
                 [1, l] => {
-                    let data = data.into_shape((*l,)).w()?;
+                    let data = data.into_shape_with_order((*l,)).w()?;
                     write_mono(w, data)?
                 }
                 [2, l] => {
-                    let data = data.into_shape((*l * 2,)).w()?;
+                    let data = data.into_shape_with_order((*l * 2,)).w()?;
                     let data = to_cow(&data);
                     let (pcm1, pcm2) = (&data[..*l], &data[*l..]);
                     opus::write_ogg_stereo(&mut w, pcm1, pcm2, sample_rate).w_f(&filename)?
@@ -293,7 +294,7 @@ fn resample(
         2 => {
             let pcm = pcm.into_dimensionality::<numpy::Ix2>().w()?;
             let (channels, l) = pcm.dim();
-            let pcm = pcm.into_shape((channels * l,)).w()?;
+            let pcm = pcm.into_shape_with_order((channels * l,)).w()?;
             let pcm = to_cow(&pcm)
                 .chunks(l)
                 .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
@@ -417,9 +418,12 @@ impl OpusStreamReader {
 
 #[pymodule]
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<dataset::DatasetReader>()?;
+    m.add_class::<dataset::DatasetIter>()?;
     m.add_class::<FileReader>()?;
     m.add_class::<OpusStreamReader>()?;
     m.add_class::<OpusStreamWriter>()?;
+    m.add_function(wrap_pyfunction!(dataset::dataset_jsonl, m)?)?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
     m.add_function(wrap_pyfunction!(write_wav, m)?)?;

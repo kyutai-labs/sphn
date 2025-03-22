@@ -3,6 +3,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Sequence
 from os import PathLike
 
 @staticmethod
+def dataset_jsonl(
+    jsonl, *, duration_sec, channel_len_per_thread=1, pad_last_segment=False, on_error=None, num_threads=None, f=None
+):
+    """
+    Creates a reader object from a jsonl file.
+    """
+    pass
+
+@staticmethod
 def durations(filenames):
     """
     Returns the durations for the audio files passed as input.
@@ -68,6 +77,49 @@ def write_wav(filename, data, sample_rate):
     single dimension.
     """
     pass
+
+class DatasetIter:
+    def buffered_lens(self):
+        """ """
+        pass
+
+class DatasetReader:
+    def __init__(
+        self,
+        paths,
+        *,
+        duration_sec,
+        channel_len_per_thread=1,
+        pad_last_segment=False,
+        on_error=None,
+        num_threads=None,
+        f=None
+    ):
+        pass
+
+    def num_threads(self, num_threads):
+        """ """
+        pass
+
+    def on_error(self, on_error):
+        """ """
+        pass
+
+    def pad_last_segment(self, p):
+        """ """
+        pass
+
+    def seq(self, *, skip=0, step_by=1):
+        """
+        Sequential reading.
+        """
+        pass
+
+    def shuffle(self, *, with_replacement=False, seed=299792458, skip=0, step_by=1):
+        """
+        Randomized reading.
+        """
+        pass
 
 class FileReader:
     def __init__(self, path):
