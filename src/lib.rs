@@ -423,6 +423,7 @@ fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FileReader>()?;
     m.add_class::<OpusStreamReader>()?;
     m.add_class::<OpusStreamWriter>()?;
+    m.add_function(wrap_pyfunction!(dataset::dataset_jsonl, m)?)?;
     m.add_function(wrap_pyfunction!(durations, m)?)?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
     m.add_function(wrap_pyfunction!(write_wav, m)?)?;

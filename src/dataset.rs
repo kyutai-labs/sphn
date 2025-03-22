@@ -134,50 +134,6 @@ impl DatasetReader {
         })
     }
 
-    /// Creates a reader object from a jsonl file.
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (jsonl, *, duration_sec, channel_len_per_thread=1, pad_last_segment=false, on_error=None, num_threads=None, f=None))]
-    #[classmethod]
-    fn from_jsonl(
-        _cls: &Bound<'_, pyo3::types::PyType>,
-        jsonl: String,
-        duration_sec: f64,
-        channel_len_per_thread: usize,
-        pad_last_segment: bool,
-        on_error: Option<&str>,
-        num_threads: Option<usize>,
-        f: Option<PyObject>,
-    ) -> PyResult<Self> {
-        use std::io::BufRead;
-
-        let on_error = match on_error {
-            Some("raise") => OnError::Raise,
-            Some("log") | None => OnError::Log,
-            Some("ignore") => OnError::Ignore,
-            Some(on_error) => py_bail!("unknown on_error '{on_error}'"),
-        };
-        let file = std::io::BufReader::new(std::fs::File::open(jsonl)?);
-        let mut paths = vec![];
-        for line in file.lines() {
-            let line = line?;
-            let path: PathWithDuration = serde_json::from_str(line.as_str()).w()?;
-            paths.push(path)
-        }
-        Ok(Self {
-            paths: Arc::new(paths),
-            duration_sec,
-            iter_order: IterOrder::Sequential,
-            seed: 1337,
-            skip: 0,
-            on_error,
-            num_threads: num_threads.unwrap_or_else(rayon::current_num_threads),
-            step_by: 1,
-            pad_last_segment,
-            channel_len_per_thread,
-            f: f.map(Arc::new),
-        })
-    }
-
     /// Sequential reading.
     #[pyo3(signature = (*, skip=0, step_by=1))]
     fn seq(&self, skip: u64, step_by: u64) -> Self {
@@ -299,6 +255,48 @@ impl DatasetReader {
             }
         }
     }
+}
+
+/// Creates a reader object from a jsonl file.
+#[allow(clippy::too_many_arguments)]
+#[pyfunction(signature = (jsonl, *, duration_sec, channel_len_per_thread=1, pad_last_segment=false, on_error=None, num_threads=None, f=None))]
+pub fn dataset_jsonl(
+    jsonl: String,
+    duration_sec: f64,
+    channel_len_per_thread: usize,
+    pad_last_segment: bool,
+    on_error: Option<&str>,
+    num_threads: Option<usize>,
+    f: Option<PyObject>,
+) -> PyResult<DatasetReader> {
+    use std::io::BufRead;
+
+    let on_error = match on_error {
+        Some("raise") => OnError::Raise,
+        Some("log") | None => OnError::Log,
+        Some("ignore") => OnError::Ignore,
+        Some(on_error) => py_bail!("unknown on_error '{on_error}'"),
+    };
+    let file = std::io::BufReader::new(std::fs::File::open(jsonl)?);
+    let mut paths = vec![];
+    for line in file.lines() {
+        let line = line?;
+        let path: PathWithDuration = serde_json::from_str(line.as_str()).w()?;
+        paths.push(path)
+    }
+    Ok(DatasetReader {
+        paths: Arc::new(paths),
+        duration_sec,
+        iter_order: IterOrder::Sequential,
+        seed: 1337,
+        skip: 0,
+        on_error,
+        num_threads: num_threads.unwrap_or_else(rayon::current_num_threads),
+        step_by: 1,
+        pad_last_segment,
+        channel_len_per_thread,
+        f: f.map(Arc::new),
+    })
 }
 
 #[allow(unused)]
