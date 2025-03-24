@@ -49,8 +49,10 @@ impl Sample {
             },
         };
         let dict = pyo3::types::PyDict::new(py);
+        let path = pyo3::types::PyString::intern(py, path);
         dict.set_item("sample_index", self.sample_index)?;
         dict.set_item("file_index", self.file_index)?;
+        dict.set_item("path", path)?;
         dict.set_item("start_time_sec", self.start_time)?;
         dict.set_item("sample_rate", self.sample_rate)?;
         dict.set_item("unpadded_len", self.unpadded_len)?;
