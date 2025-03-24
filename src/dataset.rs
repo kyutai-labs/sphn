@@ -288,12 +288,19 @@ pub fn dataset_jsonl(
         Some("ignore") => OnError::Ignore,
         Some(on_error) => py_bail!("unknown on_error '{on_error}'"),
     };
-    let file = std::io::BufReader::new(std::fs::File::open(jsonl)?);
+    let jsonl = std::path::PathBuf::from(&jsonl).canonicalize()?;
+    let file = std::io::BufReader::new(std::fs::File::open(&jsonl)?);
+    let jsonl_dir = jsonl.parent().unwrap_or_else(|| std::path::Path::new("."));
     let mut paths = vec![];
     for line in file.lines() {
         let line = line?;
         let path: PathWithDuration = serde_json::from_str(line.as_str()).w()?;
-        paths.push(path)
+        let p = std::path::PathBuf::from(path.path);
+        let p = if p.is_absolute() { p } else { jsonl_dir.to_path_buf().join(p) };
+        paths.push(PathWithDuration {
+            path: p.to_string_lossy().to_string(),
+            duration: path.duration,
+        });
     }
     Ok(DatasetReader {
         paths: Arc::new(paths),
