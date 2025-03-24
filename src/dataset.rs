@@ -22,7 +22,7 @@ struct Sample {
     sample_index: u64,
     file_index: usize,
     start_time: f64,
-    sample_rate: u32,
+    sample_rate: usize,
     unpadded_len: usize,
     data: anyhow::Result<Vec<Vec<f32>>>,
     gen_duration: f64,
@@ -89,6 +89,7 @@ pub struct DatasetReader {
     on_error: OnError,
     step_by: u64,
     pad_last_segment: bool,
+    sample_rate: Option<usize>,
     channel_len_per_thread: usize,
     f: Option<Arc<PyObject>>,
 }
@@ -97,7 +98,7 @@ pub struct DatasetReader {
 impl DatasetReader {
     #[allow(clippy::too_many_arguments)]
     /// Creates a reader object on a list of pairs `(filename, duration_in_seconds)`.
-    #[pyo3(signature = (paths, *, duration_sec, channel_len_per_thread=1, pad_last_segment=false, on_error=None, num_threads=None, f=None))]
+    #[pyo3(signature = (paths, *, duration_sec, channel_len_per_thread=1, pad_last_segment=false, on_error=None, sample_rate=None, num_threads=None, f=None))]
     #[new]
     fn new(
         paths: Vec<(String, f64)>,
@@ -105,6 +106,7 @@ impl DatasetReader {
         channel_len_per_thread: usize,
         pad_last_segment: bool,
         on_error: Option<&str>,
+        sample_rate: Option<usize>,
         num_threads: Option<usize>,
         f: Option<PyObject>,
     ) -> PyResult<Self> {
@@ -130,6 +132,7 @@ impl DatasetReader {
             on_error,
             num_threads: num_threads.unwrap_or_else(rayon::current_num_threads),
             step_by: 1,
+            sample_rate,
             pad_last_segment,
             channel_len_per_thread,
             f: f.map(Arc::new),
@@ -148,6 +151,7 @@ impl DatasetReader {
             on_error: self.on_error,
             num_threads: self.num_threads,
             step_by,
+            sample_rate: self.sample_rate,
             pad_last_segment: self.pad_last_segment,
             channel_len_per_thread: self.channel_len_per_thread,
             f: self.f.clone(),
@@ -171,6 +175,7 @@ impl DatasetReader {
             on_error: self.on_error,
             num_threads: self.num_threads,
             step_by,
+            sample_rate: self.sample_rate,
             pad_last_segment: self.pad_last_segment,
             channel_len_per_thread: self.channel_len_per_thread,
             f: self.f.clone(),
@@ -221,6 +226,7 @@ impl DatasetReader {
                     self.num_threads,
                     self.pad_last_segment,
                     self.channel_len_per_thread,
+                    self.sample_rate,
                     self.f.clone(),
                 )?;
                 Ok(iter.into_pyobject(py).w()?.into_any().unbind())
@@ -236,6 +242,7 @@ impl DatasetReader {
                     self.num_threads,
                     self.pad_last_segment,
                     self.channel_len_per_thread,
+                    self.sample_rate,
                     self.f.clone(),
                 )?;
                 Ok(iter.into_pyobject(py).w()?.into_any().unbind())
@@ -251,6 +258,7 @@ impl DatasetReader {
                     self.num_threads,
                     self.pad_last_segment,
                     self.channel_len_per_thread,
+                    self.sample_rate,
                     self.f.clone(),
                 )?;
                 Ok(iter.into_pyobject(py).w()?.into_any().unbind())
@@ -261,13 +269,14 @@ impl DatasetReader {
 
 /// Creates a reader object from a jsonl file.
 #[allow(clippy::too_many_arguments)]
-#[pyfunction(signature = (jsonl, *, duration_sec, channel_len_per_thread=1, pad_last_segment=false, on_error=None, num_threads=None, f=None))]
+#[pyfunction(signature = (jsonl, *, duration_sec, channel_len_per_thread=1, pad_last_segment=false, on_error=None, sample_rate=None, num_threads=None, f=None))]
 pub fn dataset_jsonl(
     jsonl: String,
     duration_sec: f64,
     channel_len_per_thread: usize,
     pad_last_segment: bool,
     on_error: Option<&str>,
+    sample_rate: Option<usize>,
     num_threads: Option<usize>,
     f: Option<PyObject>,
 ) -> PyResult<DatasetReader> {
@@ -296,6 +305,7 @@ pub fn dataset_jsonl(
         num_threads: num_threads.unwrap_or_else(rayon::current_num_threads),
         step_by: 1,
         pad_last_segment,
+        sample_rate,
         channel_len_per_thread,
         f: f.map(Arc::new),
     })
@@ -359,6 +369,7 @@ impl DatasetIter {
         num_threads: usize,
         pad_last_segment: bool,
         channel_len_per_thread: usize,
+        target_sample_rate: Option<usize>,
         f: Option<Arc<PyObject>>,
     ) -> PyResult<Self> {
         let sum_durations: f64 = paths.iter().map(|p| p.duration).sum();
@@ -419,8 +430,39 @@ impl DatasetIter {
                         } else {
                             start_time_1 * (left_in_reader - duration_sec)
                         };
-                        let data = reader.decode(start_time, duration_sec, pad_last_segment);
-                        (data, start_time, reader.sample_rate())
+                        let (data, unpadded_len) =
+                            match reader.decode(start_time, duration_sec, pad_last_segment) {
+                                Ok(data) => data,
+                                Err(err) => break 'data (Err(err), 0., 0),
+                            };
+                        let sample_rate = reader.sample_rate() as usize;
+                        match target_sample_rate {
+                            None => (Ok((data, unpadded_len)), start_time, sample_rate),
+                            Some(target_sample_rate) => {
+                                if target_sample_rate != sample_rate {
+                                    let is_unpadded = unpadded_len == data[0].len();
+                                    let data =
+                                        audio::resample2(&data, sample_rate, target_sample_rate);
+                                    match data {
+                                        Ok(data) => {
+                                            let unpadded_len = if is_unpadded {
+                                                data[0].len()
+                                            } else {
+                                                unpadded_len * target_sample_rate / sample_rate
+                                            };
+                                            (
+                                                Ok((data, unpadded_len)),
+                                                start_time,
+                                                target_sample_rate,
+                                            )
+                                        }
+                                        Err(err) => break 'data (Err(err), 0., 0),
+                                    }
+                                } else {
+                                    (Ok((data, unpadded_len)), start_time, sample_rate)
+                                }
+                            }
+                        }
                     };
                     let unpadded_len = data.as_ref().map_or(0, |d| d.1);
                     let data = data.map(|d| d.0);
@@ -464,6 +506,7 @@ impl DatasetIter {
         num_threads: usize,
         pad_last_segment: bool,
         channel_len_per_thread: usize,
+        target_sample_rate: Option<usize>,
         f: Option<Arc<PyObject>>,
     ) -> PyResult<Self> {
         use rand::seq::SliceRandom;
@@ -519,8 +562,30 @@ impl DatasetIter {
                                 Ok(data) => data,
                                 Err(err) => break 'sample (Err(err), 0, 0),
                             };
-                        let sample_rate = reader.sample_rate();
-                        (Ok(data), sample_rate, unpadded_len)
+                        let sample_rate = reader.sample_rate() as usize;
+                        match target_sample_rate {
+                            None => (Ok(data), sample_rate, unpadded_len),
+                            Some(target_sample_rate) => {
+                                if target_sample_rate != sample_rate {
+                                    let is_unpadded = unpadded_len == data[0].len();
+                                    let data =
+                                        audio::resample2(&data, sample_rate, target_sample_rate);
+                                    match data {
+                                        Ok(data) => {
+                                            let unpadded_len = if is_unpadded {
+                                                data[0].len()
+                                            } else {
+                                                unpadded_len * target_sample_rate / sample_rate
+                                            };
+                                            (Ok(data), target_sample_rate, unpadded_len)
+                                        }
+                                        Err(err) => break 'sample (Err(err), 0, 0),
+                                    }
+                                } else {
+                                    (Ok(data), sample_rate, unpadded_len)
+                                }
+                            }
+                        }
                     };
                     let sample = Sample {
                         sample_index: segment_index as u64 * step_by + skip,
