@@ -4,7 +4,15 @@ from os import PathLike
 
 @staticmethod
 def dataset_jsonl(
-    jsonl, *, duration_sec, channel_len_per_thread=1, pad_last_segment=False, on_error=None, num_threads=None, f=None
+    jsonl,
+    *,
+    duration_sec,
+    channel_len_per_thread=1,
+    pad_last_segment=False,
+    on_error=None,
+    sample_rate=None,
+    num_threads=None,
+    f=None
 ):
     """
     Creates a reader object from a jsonl file.
@@ -92,6 +100,7 @@ class DatasetReader:
         channel_len_per_thread=1,
         pad_last_segment=False,
         on_error=None,
+        sample_rate=None,
         num_threads=None,
         f=None
     ):
