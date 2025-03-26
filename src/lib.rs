@@ -151,9 +151,14 @@ fn read(
     };
     let (data, sample_rate) = match sample_rate {
         Some(out_sr) => {
-            let in_sr = reader.sample_rate() as usize;
-            let data = audio::resample2(&data, in_sr, out_sr as usize).w_f(&filename)?;
-            (data, out_sr)
+            let in_sr = reader.sample_rate();
+            if in_sr != out_sr {
+                let data =
+                    audio::resample2(&data, in_sr as usize, out_sr as usize).w_f(&filename)?;
+                (data, out_sr)
+            } else {
+                (data, in_sr)
+            }
         }
         None => {
             let sample_rate = reader.sample_rate();
