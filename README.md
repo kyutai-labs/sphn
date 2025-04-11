@@ -13,6 +13,15 @@ The python wheels are available on [pypi](https://pypi.org/project/sphn/).
 pip install sphn
 ```
 
+If you're seeing an issue with CMake saying "Compatibility with CMake < 3.5 has been removed from CMake.",
+this is because building Opus is not compatible with CMake 4.x. Install a 3.x version (e.g. 3.31)
+and then set the `CMAKE` environment variable to use it, e.g.:
+
+```bash
+pip install 'cmake<4' # Or use your system's package manager
+CMAKE=/path/to/.venv/bin/cmake pip install sphn
+```
+
 ## Usage
 
 Download some sample audio file.
