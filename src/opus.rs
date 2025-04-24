@@ -376,14 +376,18 @@ impl StreamReader {
 
     pub fn append(&mut self, data: Vec<u8>) -> Result<()> {
         match self.opus_tx.as_ref() {
-            Some(opus_tx) => opus_tx.send(data)?,
+            Some(opus_tx) => {
+                if opus_tx.send(data).is_err() {
+                    anyhow::bail!("the opus background thread has been closed, maybe it received some invalid data?")
+                }
+            }
             None => anyhow::bail!("StreamReader has been closed"),
         }
         Ok(())
     }
 
     pub fn close(&mut self) {
-        // This triggers the drop of the channel if any and the thread will stop.
+        // This triggers the drop of the channel if any and the background thread will stop.
         self.opus_tx = None
     }
 
