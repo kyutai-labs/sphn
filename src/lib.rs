@@ -366,7 +366,14 @@ impl OpusStreamWriter {
         self.sent_header = true;
         let pcm = pcm.as_array();
         let pcm = to_cow(&pcm);
-        let bytes = self.inner.lock().unwrap().encode_page(&pcm).w()?;
+        let mut inner = self.inner.lock().unwrap();
+        let bytes = inner.encode_page(&pcm).w()?;
+        let bytes = if self.sent_header {
+            bytes
+        } else {
+            self.sent_header = true;
+            [inner.header_data(), &bytes].concat()
+        };
         Ok(bytes)
     }
 }
@@ -391,12 +398,14 @@ impl OpusStreamReader {
     }
 
     /// Writes some ogg/opus bytes to the current stream.
-    fn append_bytes(&mut self, data: &[u8]) -> PyResult<Vec<f32>> {
+    fn append_bytes(&mut self, data: &[u8]) -> PyResult<PyObject> {
         let mut inner = self.inner.lock().unwrap();
-        match inner.decode(data).w()? {
-            None => Ok(vec![]),
-            Some(pcm) => Ok(pcm.to_vec()),
-        }
+        let pcm = match inner.decode(data).w()? {
+            None => vec![],
+            Some(pcm) => pcm.to_vec(),
+        };
+        let pcm = Python::with_gil(|py| numpy::PyArray1::from_vec(py, pcm).into_any().unbind());
+        Ok(pcm)
     }
 }
 
