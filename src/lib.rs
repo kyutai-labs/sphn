@@ -1,3 +1,4 @@
+#![allow(clippy::useless_conversion)]
 mod audio;
 mod dataset;
 mod opus;
@@ -209,7 +210,6 @@ fn write_wav(
                         .zip(pcm2.iter())
                         .flat_map(|(s1, s2)| [*s1, *s2])
                         .collect::<Vec<_>>();
-                    println!("{:?}", &data[..20]);
                     wav::write_stereo(&mut w, &data, sample_rate).w_f(&filename)?
                 }
                 _ => py_bail!("expected one or two channels, got shape {:?}", data.shape()),
@@ -342,16 +342,17 @@ fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(PyObject, u32)> {
 
 #[pyclass]
 struct OpusStreamWriter {
-    inner: Mutex<opus::StreamWriter>,
-    sample_rate: u32,
+    inner: Mutex<kaudio::ogg_opus::Encoder>,
+    sample_rate: usize,
+    sent_header: bool,
 }
 
 #[pymethods]
 impl OpusStreamWriter {
     #[new]
-    fn new(sample_rate: u32) -> PyResult<Self> {
-        let inner = opus::StreamWriter::new(sample_rate).w()?;
-        Ok(Self { inner: Mutex::new(inner), sample_rate })
+    fn new(sample_rate: usize) -> PyResult<Self> {
+        let inner = kaudio::ogg_opus::Encoder::new(sample_rate).w()?;
+        Ok(Self { inner: Mutex::new(inner), sample_rate, sent_header: false })
     }
 
     fn __str__(&self) -> String {
@@ -360,34 +361,33 @@ impl OpusStreamWriter {
 
     /// Appends one frame of pcm data to the stream. The data should be a 1d numpy array using
     /// float values, the number of elements must be an allowed frame size, e.g. 960 or 1920.
-    fn append_pcm(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<()> {
+    fn append_pcm(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<Vec<u8>> {
         let pcm = pcm.as_array();
         let pcm = to_cow(&pcm);
-        self.inner.lock().unwrap().append_pcm(&pcm).w()?;
-        Ok(())
-    }
-
-    /// Gets the pending opus bytes from the stream. An empty bytes object is returned if no data
-    /// is currently available.
-    fn read_bytes(&mut self) -> PyResult<PyObject> {
-        let bytes = self.inner.lock().unwrap().read_bytes().w()?;
-        let bytes =
-            Python::with_gil(|py| pyo3::types::PyBytes::new(py, &bytes).into_any().unbind());
+        let mut inner = self.inner.lock().unwrap();
+        let bytes = inner.encode_page(&pcm).w()?;
+        let bytes = if self.sent_header {
+            bytes
+        } else {
+            self.sent_header = true;
+            [inner.header_data(), &bytes].concat()
+        };
         Ok(bytes)
     }
 }
 
 #[pyclass]
 struct OpusStreamReader {
-    inner: Mutex<opus::StreamReader>,
-    sample_rate: u32,
+    inner: Mutex<kaudio::ogg_opus::Decoder>,
+    sample_rate: usize,
 }
 
 #[pymethods]
 impl OpusStreamReader {
     #[new]
-    fn new(sample_rate: u32) -> PyResult<Self> {
-        let inner = opus::StreamReader::new(sample_rate).w()?;
+    #[pyo3(signature = (sample_rate, flush_every_n_samples=0))]
+    fn new(sample_rate: usize, flush_every_n_samples: usize) -> PyResult<Self> {
+        let inner = kaudio::ogg_opus::Decoder::new(sample_rate, flush_every_n_samples).w()?;
         Ok(Self { inner: Mutex::new(inner), sample_rate })
     }
 
@@ -396,28 +396,14 @@ impl OpusStreamReader {
     }
 
     /// Writes some ogg/opus bytes to the current stream.
-    fn append_bytes(&mut self, data: &[u8]) -> PyResult<()> {
-        self.inner.lock().unwrap().append(data.to_vec()).w()
-    }
-
-    // TODO(laurent): maybe we should also have a pyo3_async api here.
-    /// Gets the pcm data decoded by the stream, this returns a 1d numpy array or None if the
-    /// stream has been closed. The array is empty if no data is currently available.
-    fn read_pcm(&mut self) -> PyResult<PyObject> {
-        let pcm_data = self.inner.lock().unwrap().read_pcm().w()?;
-        Python::with_gil(|py| match pcm_data {
-            None => Ok(py.None()),
-            Some(data) => {
-                let data = numpy::PyArray1::from_vec(py, data.to_vec()).into_any().unbind();
-                Ok(data)
-            }
-        })
-    }
-
-    /// Closes the stream, this results in the worker thread exiting and the follow up
-    /// calls to `read_pcm` will return None once all the pcm data has been returned.
-    fn close(&mut self) {
-        self.inner.lock().unwrap().close()
+    fn append_bytes(&mut self, data: &[u8]) -> PyResult<PyObject> {
+        let mut inner = self.inner.lock().unwrap();
+        let pcm = match inner.decode(data).w()? {
+            None => vec![],
+            Some(pcm) => pcm.to_vec(),
+        };
+        let pcm = Python::with_gil(|py| numpy::PyArray1::from_vec(py, pcm).into_any().unbind());
+        Ok(pcm)
     }
 }
 

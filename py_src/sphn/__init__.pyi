@@ -182,26 +182,12 @@ class FileReader:
         pass
 
 class OpusStreamReader:
-    def __init__(self, sample_rate):
+    def __init__(self, sample_rate, flush_every_n_samples=0):
         pass
 
     def append_bytes(self, data):
         """
         Writes some ogg/opus bytes to the current stream.
-        """
-        pass
-
-    def close(self):
-        """
-        Closes the stream, this results in the worker thread exiting and the follow up
-        calls to `read_pcm` will return None once all the pcm data has been returned.
-        """
-        pass
-
-    def read_pcm(self):
-        """
-        Gets the pcm data decoded by the stream, this returns a 1d numpy array or None if the
-        stream has been closed. The array is empty if no data is currently available.
         """
         pass
 
@@ -213,12 +199,5 @@ class OpusStreamWriter:
         """
         Appends one frame of pcm data to the stream. The data should be a 1d numpy array using
         float values, the number of elements must be an allowed frame size, e.g. 960 or 1920.
-        """
-        pass
-
-    def read_bytes(self):
-        """
-        Gets the pending opus bytes from the stream. An empty bytes object is returned if no data
-        is currently available.
         """
         pass
