@@ -210,7 +210,6 @@ fn write_wav(
                         .zip(pcm2.iter())
                         .flat_map(|(s1, s2)| [*s1, *s2])
                         .collect::<Vec<_>>();
-                    println!("{:?}", &data[..20]);
                     wav::write_stereo(&mut w, &data, sample_rate).w_f(&filename)?
                 }
                 _ => py_bail!("expected one or two channels, got shape {:?}", data.shape()),
@@ -363,7 +362,6 @@ impl OpusStreamWriter {
     /// Appends one frame of pcm data to the stream. The data should be a 1d numpy array using
     /// float values, the number of elements must be an allowed frame size, e.g. 960 or 1920.
     fn append_pcm(&mut self, pcm: numpy::PyReadonlyArray1<f32>) -> PyResult<Vec<u8>> {
-        self.sent_header = true;
         let pcm = pcm.as_array();
         let pcm = to_cow(&pcm);
         let mut inner = self.inner.lock().unwrap();

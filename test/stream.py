@@ -24,7 +24,6 @@ with open("myfile.opus", "wb") as fobj:
         opus = stream_writer.append_pcm(packet)
         fobj.write(opus)
         pcm = stream_reader.append_bytes(opus)
-        print(type(pcm))
         if pcm.shape[0] > 0:
             print("READER", pcm.shape)
             all_pcms.append(pcm)
