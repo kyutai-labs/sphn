@@ -81,7 +81,7 @@ impl FileReader {
     /// is time.
     /// If the end of the file is reached, the decoding stops and the already decoded data is
     /// returned.
-    fn decode(&mut self, start_sec: f64, duration_sec: f64, py: Python) -> PyResult<PyObject> {
+    fn decode(&mut self, start_sec: f64, duration_sec: f64, py: Python) -> PyResult<Py<PyAny>> {
         let (data, _unpadded_len) =
             self.inner.decode(start_sec, duration_sec, false).w_f(&self.path)?;
         Ok(numpy::PyArray2::from_vec2(py, &data)?.into_any().unbind())
@@ -140,7 +140,7 @@ fn read(
     start_sec: Option<f64>,
     duration_sec: Option<f64>,
     sample_rate: Option<u32>,
-) -> PyResult<(PyObject, u32)> {
+) -> PyResult<(Py<PyAny>, u32)> {
     let mut reader = audio::FileReader::new(&filename).w_f(&filename)?;
     let data = match (start_sec, duration_sec) {
         (Some(start_sec), Some(duration_sec)) => {
@@ -166,7 +166,7 @@ fn read(
             (data, sample_rate)
         }
     };
-    let data = Python::with_gil(|py| {
+    let data = Python::attach(|py| {
         Ok::<_, PyErr>(numpy::PyArray2::from_vec2(py, &data)?.into_any().unbind())
     })
     .w_f(&filename)?;
@@ -285,14 +285,14 @@ fn resample(
     pcm: numpy::PyReadonlyArrayDyn<f32>,
     src_sample_rate: usize,
     dst_sample_rate: usize,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let pcm = pcm.as_array();
     match pcm.ndim() {
         1 => {
             let pcm = pcm.into_dimensionality::<numpy::Ix1>().w()?;
             let pcm = to_cow(&pcm);
             let pcm = audio::resample(&pcm[..], src_sample_rate, dst_sample_rate).w()?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 Ok::<_, PyErr>(numpy::PyArray1::from_vec(py, pcm).into_any().unbind())
             })
         }
@@ -305,7 +305,7 @@ fn resample(
                 .map(|pcm| audio::resample(pcm, src_sample_rate, dst_sample_rate))
                 .collect::<anyhow::Result<Vec<_>>>()
                 .w()?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 Ok::<_, PyErr>(numpy::PyArray2::from_vec2(py, &pcm)?.into_any().unbind())
             })
         }
@@ -319,7 +319,7 @@ fn resample(
 /// encoded at 48kHz so this value is always returned.
 #[pyfunction]
 #[pyo3(signature = (filename))]
-fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u32)> {
+fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(Py<PyAny>, u32)> {
     let file = std::fs::File::open(&filename)?;
     let file = std::io::BufReader::new(file);
     let (data, sample_rate) = opus::read_ogg(file).w_f(&filename)?;
@@ -333,7 +333,7 @@ fn read_opus(filename: std::path::PathBuf, py: Python) -> PyResult<(PyObject, u3
 /// encoded at 48kHz so this value is always returned.
 #[pyfunction]
 #[pyo3(signature = (bytes))]
-fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(PyObject, u32)> {
+fn read_opus_bytes(bytes: Vec<u8>, py: Python) -> PyResult<(Py<PyAny>, u32)> {
     let bytes = std::io::Cursor::new(bytes);
     let (data, sample_rate) = opus::read_ogg(bytes).w()?;
     let data = numpy::PyArray2::from_vec2(py, &data)?.into_any().unbind();
@@ -396,13 +396,13 @@ impl OpusStreamReader {
     }
 
     /// Writes some ogg/opus bytes to the current stream.
-    fn append_bytes(&mut self, data: &[u8]) -> PyResult<PyObject> {
+    fn append_bytes(&mut self, data: &[u8]) -> PyResult<Py<PyAny>> {
         let mut inner = self.inner.lock().unwrap();
         let pcm = match inner.decode(data).w()? {
             None => vec![],
             Some(pcm) => pcm.to_vec(),
         };
-        let pcm = Python::with_gil(|py| numpy::PyArray1::from_vec(py, pcm).into_any().unbind());
+        let pcm = Python::attach(|py| numpy::PyArray1::from_vec(py, pcm).into_any().unbind());
         Ok(pcm)
     }
 }

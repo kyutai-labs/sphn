@@ -34,7 +34,7 @@ impl Sample {
         py: Python<'_>,
         on_error: OnError,
         path: &str,
-    ) -> PyResult<Option<PyObject>> {
+    ) -> PyResult<Option<Py<PyAny>>> {
         let data = match self.data {
             Ok(sample) => sample,
             Err(err) => match on_error {
@@ -57,7 +57,7 @@ impl Sample {
         dict.set_item("sample_rate", self.sample_rate)?;
         dict.set_item("unpadded_len", self.unpadded_len)?;
         dict.set_item("gen_duration_sec", self.gen_duration)?;
-        dict.set_item::<_, PyObject>(
+        dict.set_item::<_, Py<PyAny>>(
             "data",
             numpy::PyArray2::from_vec2(py, &data)?.into_any().unbind(),
         )?;
@@ -67,7 +67,7 @@ impl Sample {
 
 enum SampleOrObject {
     Sample(Sample),
-    Object(PyResult<Option<PyObject>>),
+    Object(PyResult<Option<Py<PyAny>>>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -91,7 +91,7 @@ pub struct DatasetReader {
     pad_last_segment: bool,
     sample_rate: Option<usize>,
     channel_len_per_thread: usize,
-    f: Option<Arc<PyObject>>,
+    f: Option<Arc<Py<PyAny>>>,
 }
 
 #[pymethods]
@@ -108,7 +108,7 @@ impl DatasetReader {
         on_error: Option<&str>,
         sample_rate: Option<usize>,
         num_threads: Option<usize>,
-        f: Option<PyObject>,
+        f: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let on_error = match on_error {
             Some("raise") => OnError::Raise,
@@ -209,7 +209,7 @@ impl DatasetReader {
         Ok(s)
     }
 
-    fn __iter__(&self, py: Python) -> PyResult<PyObject> {
+    fn __iter__(&self, py: Python) -> PyResult<Py<PyAny>> {
         // Import the threading module from the "main" thread to avoid the dreadful
         // "assert tlock.locked()" errors.
         let _m = py.import("threading")?;
@@ -278,7 +278,7 @@ pub fn dataset_jsonl(
     on_error: Option<&str>,
     sample_rate: Option<usize>,
     num_threads: Option<usize>,
-    f: Option<PyObject>,
+    f: Option<Py<PyAny>>,
 ) -> PyResult<DatasetReader> {
     use std::io::BufRead;
 
@@ -377,7 +377,7 @@ impl DatasetIter {
         pad_last_segment: bool,
         channel_len_per_thread: usize,
         target_sample_rate: Option<usize>,
-        f: Option<Arc<PyObject>>,
+        f: Option<Arc<Py<PyAny>>>,
     ) -> PyResult<Self> {
         let sum_durations: f64 = paths.iter().map(|p| p.duration).sum();
         if sum_durations < 1e-5 {
@@ -486,7 +486,7 @@ impl DatasetIter {
                         None => SampleOrObject::Sample(sample),
                         Some(f) => {
                             let f = f.clone();
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let v = sample.into_dict(py, on_error, &paths[file_index].path);
                                 let v = match v {
                                     Ok(None) | Err(_) => v,
@@ -514,7 +514,7 @@ impl DatasetIter {
         pad_last_segment: bool,
         channel_len_per_thread: usize,
         target_sample_rate: Option<usize>,
-        f: Option<Arc<PyObject>>,
+        f: Option<Arc<Py<PyAny>>>,
     ) -> PyResult<Self> {
         use rand::seq::SliceRandom;
 
@@ -607,7 +607,7 @@ impl DatasetIter {
                         None => SampleOrObject::Sample(sample),
                         Some(f) => {
                             let f = f.clone();
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let v = sample.into_dict(py, on_error, &paths[file_index].path);
                                 let v = match v {
                                     Ok(None) | Err(_) => v,
@@ -634,9 +634,9 @@ impl DatasetIter {
         slf
     }
 
-    fn __next__(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+    fn __next__(&mut self, py: Python) -> PyResult<Option<Py<PyAny>>> {
         loop {
-            let sample = py.allow_threads(|| self.pm.next());
+            let sample = py.detach(|| self.pm.next());
             let sample = match sample {
                 Some(sample) => sample,
                 None => return Ok(None),
