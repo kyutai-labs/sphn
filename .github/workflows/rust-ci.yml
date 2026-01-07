@@ -10,6 +10,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
         rust: [stable, nightly]
+    env:
+      CMAKE_ARGS: "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -28,6 +30,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
         rust: [stable, nightly]
+    env:
+      CMAKE_ARGS: "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
