@@ -97,10 +97,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Install CMake 3.x
+        run: pip install 'cmake<4'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          CMAKE_ARGS: "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --interpreter '3.10 3.11 3.12 3.13 3.14'
