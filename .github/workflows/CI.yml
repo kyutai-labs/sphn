@@ -58,6 +58,37 @@ jobs:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
+  # Free-threaded (cp314t) wheels. These are built apart from the `linux` job as the
+  # messense/manylinux2014-cross container used there does not provide free-threaded interpreters,
+  # so this one uses the pypa manylinux_2_28 image directly. That image has a recent cmake (4.x)
+  # that rejects the cmake_minimum_required of the bundled libopus, and it installs libraries in
+  # lib64 where audiopus_sys does not look, hence the two cmake settings below.
+  linux-free-threaded:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          args: --release --out dist --interpreter python3.14t
+          container: quay.io/pypa/manylinux_2_28_x86_64
+          before-script-linux: |
+            echo 'set(CMAKE_INSTALL_LIBDIR lib CACHE STRING "" FORCE)' > /tmp/libdir-lib.cmake
+          docker-options: |
+            -e LIBOPUS_STATIC=1
+            -e OPUS_STATIC=1
+            -e LIBOPUS_NO_PKG=1
+            -e OPUS_NO_PKG=1
+            -e CMAKE_POLICY_VERSION_MINIMUM=3.5
+            -e CMAKE_TOOLCHAIN_FILE=/tmp/libdir-lib.cmake
+          manylinux: '2_28'
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-x86_64-free-threaded
+          path: dist
+
   windows:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
@@ -130,7 +161,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [linux, windows, macos, sdist]
+    needs: [linux, linux-free-threaded, windows, macos, sdist]
     permissions:
       id-token: write
       contents: write
