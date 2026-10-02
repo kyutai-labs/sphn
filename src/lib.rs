@@ -407,7 +407,7 @@ impl OpusStreamReader {
     }
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn sphn(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<dataset::DatasetReader>()?;
     m.add_class::<dataset::DatasetIter>()?;
